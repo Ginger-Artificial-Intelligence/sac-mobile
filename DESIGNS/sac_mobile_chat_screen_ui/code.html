@@ -1,0 +1,234 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Conversation - Souken Labs</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-bright": "#f8f9ff",
+                        "on-primary-fixed-variant": "#0a458c",
+                        "on-secondary-container": "#007232",
+                        "error": "#ba1a1a",
+                        "outline": "#737782",
+                        "surface-variant": "#d3e4fe",
+                        "primary-container": "#10488f",
+                        "primary-fixed-dim": "#abc7ff",
+                        "surface-tint": "#2f5ea6",
+                        "secondary": "#006d2f",
+                        "on-secondary-fixed": "#002109",
+                        "on-primary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed-dim": "#3de273",
+                        "tertiary": "#2b343d",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#bdc8d3",
+                        "on-tertiary-fixed-variant": "#3e4851",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#434751",
+                        "secondary-container": "#5dfd8a",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "secondary-fixed": "#66ff8e",
+                        "on-error": "#ffffff",
+                        "background": "#f8f9ff",
+                        "tertiary-fixed": "#d9e4ef",
+                        "tertiary-container": "#414b54",
+                        "surface-container": "#e5eeff",
+                        "surface-container-low": "#eff4ff",
+                        "inverse-primary": "#abc7ff",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface-dim": "#cbdbf5",
+                        "on-surface": "#0b1c30",
+                        "on-primary-container": "#95b9ff",
+                        "on-primary-fixed": "#001b3f",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-secondary-fixed-variant": "#005322",
+                        "on-tertiary-container": "#b1bbc6",
+                        "on-tertiary-fixed": "#131d25",
+                        "surface": "#f8f9ff",
+                        "inverse-surface": "#213145",
+                        "on-background": "#0b1c30",
+                        "outline-variant": "#c3c6d2",
+                        "primary": "#00326b",
+                        "surface-container-high": "#dce9ff",
+                        "primary-fixed": "#d7e2ff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "container-padding": "12px",
+                        "info-panel-width": "300px",
+                        "sidebar-width": "240px",
+                        "thread-list-width": "320px"
+                    },
+                    fontFamily: {
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"],
+                        "label-lg": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "caption": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"]
+                    },
+                    fontSize: {
+                        "headline-md": ["16px", { lineHeight: "24px", fontWeight: "600" }],
+                        "body-md": ["13px", { lineHeight: "18px", fontWeight: "400" }],
+                        "label-lg": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "600" }],
+                        "headline-lg": ["20px", { lineHeight: "28px", fontWeight: "700" }],
+                        "body-lg": ["14px", { lineHeight: "20px", fontWeight: "500" }],
+                        "caption": ["10px", { lineHeight: "12px", fontWeight: "400" }],
+                        "label-md": ["11px", { lineHeight: "14px", fontWeight: "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .bg-chat-pattern {
+            background-color: #f8f9ff;
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c3c6d2' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface h-screen flex flex-col overflow-hidden">
+<!-- Top App Bar -->
+<header class="bg-surface border-b border-outline-variant/30 flex items-center justify-between px-3 py-2 z-10 shrink-0">
+<div class="flex items-center gap-2">
+<button class="p-2 -ml-2 rounded-full hover:bg-surface-variant/50 text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div class="flex items-center gap-3 cursor-pointer">
+<img class="w-10 h-10 rounded-full object-cover" data-alt="Profile picture for Souken Labs, showing initials SL on a blue background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCi1ZzWOe2IC0XS0949Zl5SHFNK7yDCz7_RbWWyxsa3i_HXn47oB3hoFVfpow2maapjNdfhaLMDA7K_sdgmnkVoF_bBABt6-Wx01qj9NqbDXAvb03D57tMVu0anAvDe8Fa6iufh2pZNKze6nDL35MqouUHBRgHMG_Iq8tEHjtG-sm3iLJTtQ_DlLLU9S21U_B-09An-SaCuWyu8Vf5asTpc7NaCydHNRiBe0PrBN4AKhYrJ6c2uGEM34w">
+<div class="flex flex-col">
+<h1 class="font-headline-md text-headline-md text-on-surface">Souken Labs</h1>
+<span class="font-caption text-caption text-secondary">Online</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-2 rounded-full hover:bg-surface-variant/50 text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined">videocam</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-variant/50 text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined">call</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-variant/50 text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Chat Canvas -->
+<main class="flex-1 bg-chat-pattern overflow-y-auto p-4 flex flex-col gap-4 relative">
+<!-- Date Header -->
+<div class="flex justify-center my-2">
+<span class="bg-surface-container-low text-on-surface-variant font-caption text-caption px-3 py-1 rounded-full border border-outline-variant/30 shadow-sm">Today</span>
+</div>
+<!-- Incoming Message (CRM Context) -->
+<div class="flex justify-start">
+<div class="bg-surface max-w-[85%] md:max-w-[70%] rounded-2xl rounded-tl-sm px-3 py-2 shadow-sm border border-outline-variant/20 relative group">
+<div class="font-body-md text-body-md text-on-surface mb-1">
+                    Hello! We've reviewed the latest API documentation for the CRM integration. Looks solid.
+                </div>
+<div class="flex justify-end items-center gap-1 mt-1">
+<span class="font-caption text-caption text-on-surface-variant/70">10:42 AM</span>
+</div>
+</div>
+</div>
+<!-- System Message / CRM Alert -->
+<div class="flex justify-center my-2">
+<div class="bg-surface-container-high/80 backdrop-blur-sm px-4 py-2 rounded-lg text-center shadow-sm max-w-[90%] border border-outline-variant/10">
+<div class="flex items-center justify-center gap-2 mb-1 text-primary-container">
+<span class="material-symbols-outlined" style="font-size: 16px;">update</span>
+<span class="font-label-md text-label-md">Lead Status Updated</span>
+</div>
+<span class="font-caption text-caption text-on-surface-variant">Souken Labs moved from 'Negotiation' to 'Closed Won'</span>
+</div>
+</div>
+<!-- Outgoing Message -->
+<div class="flex justify-end">
+<div class="bg-surface-container text-on-surface max-w-[85%] md:max-w-[70%] rounded-2xl rounded-tr-sm px-3 py-2 shadow-sm border border-primary-container/10 relative group">
+<div class="font-body-md text-body-md mb-1">
+                    That's great news! I'll prepare the onboarding package and send it over shortly.
+                </div>
+<div class="flex justify-end items-center gap-1 mt-1">
+<span class="font-caption text-caption text-on-surface-variant/70">10:45 AM</span>
+<span class="material-symbols-outlined text-primary-container" style="font-size: 14px;">done_all</span>
+</div>
+</div>
+</div>
+<!-- Outgoing Document (CRM Context) -->
+<div class="flex justify-end mt-1">
+<div class="bg-surface-container text-on-surface max-w-[85%] md:max-w-[70%] rounded-2xl rounded-tr-sm p-1 shadow-sm border border-primary-container/10">
+<div class="bg-surface/50 rounded-xl p-2 flex items-center gap-3">
+<div class="bg-primary/10 p-2 rounded-lg text-primary">
+<span class="material-symbols-outlined">description</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="font-label-md text-label-md truncate text-on-surface">Onboarding_Package_v2.pdf</div>
+<div class="font-caption text-caption text-on-surface-variant">2.4 MB • PDF</div>
+</div>
+</div>
+<div class="flex justify-end items-center gap-1 mt-1 px-2 pb-1">
+<span class="font-caption text-caption text-on-surface-variant/70">10:48 AM</span>
+<span class="material-symbols-outlined text-on-surface-variant/50" style="font-size: 14px;">done</span>
+</div>
+</div>
+</div>
+<!-- Spacer for input area -->
+<div class="h-4"></div>
+</main>
+<!-- Message Input Area -->
+<footer class="bg-surface border-t border-outline-variant/30 px-2 py-2 shrink-0">
+<div class="flex items-end gap-2">
+<!-- Main Input Container -->
+<div class="flex-1 bg-surface-container-lowest border border-outline-variant/50 rounded-full flex items-center px-2 py-1 min-h-[44px] shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-variant/50 transition-colors shrink-0">
+<span class="material-symbols-outlined">mood</span>
+</button>
+<textarea class="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-[24px] py-2 px-1 font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant/50" placeholder="Message" rows="1"></textarea>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-variant/50 transition-colors shrink-0">
+<span class="material-symbols-outlined">attach_file</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-variant/50 transition-colors shrink-0">
+<span class="material-symbols-outlined">photo_camera</span>
+</button>
+</div>
+<!-- Voice / Send Button -->
+<button class="bg-primary-container text-on-primary w-11 h-11 rounded-full flex items-center justify-center shrink-0 shadow-md hover:bg-primary transition-colors active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">mic</span>
+</button>
+</div>
+</footer>
+<script>
+        // Simple auto-resize for textarea
+        const textarea = document.querySelector('textarea');
+        textarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight < 120 ? this.scrollHeight : 120) + 'px';
+            if (this.value.trim().length > 0) {
+                document.querySelector('.bg-primary-container .material-symbols-outlined').textContent = 'send';
+            } else {
+                document.querySelector('.bg-primary-container .material-symbols-outlined').textContent = 'mic';
+            }
+        });
+    </script>
+</body></html>

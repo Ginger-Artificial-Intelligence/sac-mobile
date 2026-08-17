@@ -1,0 +1,249 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Proton CRM - Profile</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#0b1c30",
+                        "on-background": "#0b1c30",
+                        "on-primary-fixed": "#001b3f",
+                        "inverse-primary": "#abc7ff",
+                        "on-primary": "#ffffff",
+                        "outline": "#737782",
+                        "on-secondary-fixed": "#002109",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#0a458c",
+                        "tertiary-fixed-dim": "#bdc8d3",
+                        "secondary-fixed-dim": "#3de273",
+                        "surface-container": "#e5eeff",
+                        "surface-container-highest": "#d3e4fe",
+                        "surface-container-low": "#eff4ff",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#10488f",
+                        "tertiary-container": "#414b54",
+                        "primary-fixed": "#d7e2ff",
+                        "on-tertiary-fixed": "#131d25",
+                        "error-container": "#ffdad6",
+                        "secondary-container": "#5dfd8a",
+                        "on-tertiary-container": "#b1bbc6",
+                        "on-secondary-fixed-variant": "#005322",
+                        "secondary-fixed": "#66ff8e",
+                        "surface-dim": "#cbdbf5",
+                        "surface": "#f8f9ff",
+                        "surface-container-high": "#dce9ff",
+                        "on-surface-variant": "#434751",
+                        "on-tertiary-fixed-variant": "#3e4851",
+                        "on-secondary": "#ffffff",
+                        "secondary": "#006d2f",
+                        "primary-fixed-dim": "#abc7ff",
+                        "background": "#f8f9ff",
+                        "on-error-container": "#93000a",
+                        "surface-variant": "#d3e4fe",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface-bright": "#f8f9ff",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#007232",
+                        "surface-tint": "#2f5ea6",
+                        "primary": "#00326b",
+                        "tertiary": "#2b343d",
+                        "on-primary-container": "#95b9ff",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#d9e4ef",
+                        "outline-variant": "#c3c6d2",
+                        "inverse-surface": "#213145"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "info-panel-width": "300px",
+                        "container-padding": "12px",
+                        "unit": "4px",
+                        "thread-list-width": "320px",
+                        "gutter": "16px",
+                        "sidebar-width": "240px"
+                    },
+                    "fontFamily": {
+                        "label-lg": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"],
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "caption": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "label-lg": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "label-md": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                        "body-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "body-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "headline-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "headline-lg": ["20px", { "lineHeight": "28px", "fontWeight": "700" }],
+                        "caption": ["10px", { "lineHeight": "12px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col pb-28 antialiased">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-surface border-b border-outline-variant flex items-center justify-between px-container-padding h-14 z-40">
+<button class="cursor-pointer active:opacity-70 text-primary p-2 flex items-center justify-center hover:bg-surface-container-high transition-colors rounded-full">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="font-headline-lg text-headline-lg font-bold text-primary tracking-tight">Proton CRM</h1>
+<div class="w-10 h-10"></div> <!-- Spacer for balance -->
+</header>
+<!-- Main Content -->
+<main class="flex-1 pb-10 pt-6 w-full max-w-md mx-auto">
+<!-- Avatar Section -->
+<div class="flex justify-center mt-2 mb-10 relative">
+<div class="relative">
+<!-- Profile Image -->
+<div class="w-40 h-40 rounded-full overflow-hidden border-4 border-surface-container-lowest shadow-sm bg-gradient-to-tr from-primary-container to-primary-fixed">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of Alex Mercer, a confident young salesman in a crisp modern blue suit and white shirt, set against a softly blurred, bright, high-key corporate office background. The lighting is studio-quality, conveying trust, energy, and success in a clean enterprise environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDdZcyQZajRFz8ht1EPOjIjBQcsdjkJX9Mfo55VsajwLxPeOt4BsE6b2LYBwDJGDBH9Me7DguwGY7ohzhf907wKMVh1Xq5olbKkdkvGv87R0EzkbbFGseN8eh7MFra7qJba7w7rVLg903Oiw2SGfS7OSX9tya7jIVu4Jx3eyll71AMAHxDS8IMZ1L_DEr3D5fCYaKbWZXV1U392Y91F4tieoZu4nA_TRGq3Yx1i7wQUSQkP0m_0zZVJ1A">
+</div>
+<!-- Floating Camera Button -->
+<button class="absolute bottom-2 right-2 w-12 h-12 bg-secondary rounded-full flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-transform border-4 border-surface-container-lowest text-on-secondary">
+<span class="material-symbols-outlined text-[24px]">photo_camera</span>
+</button>
+</div>
+</div>
+<!-- Profile Details List -->
+<div class="px-2 space-y-1">
+<!-- Name Field -->
+<div class="flex items-center px-4 py-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[24px]">person</span>
+</div>
+<div class="flex-1 border-b border-outline-variant/30 pb-3 group-hover:border-transparent transition-colors">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Name</p>
+<div class="flex justify-between items-center">
+<p class="font-body-lg text-body-lg text-on-surface">Alex Mercer</p>
+<span class="material-symbols-outlined text-[18px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">edit</span>
+</div>
+</div>
+</div>
+<!-- Role Field -->
+<div class="flex items-start px-4 py-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-on-surface-variant pt-1">
+<span class="material-symbols-outlined text-[24px]">work</span>
+</div>
+<div class="flex-1 border-b border-outline-variant/30 pb-3 group-hover:border-transparent transition-colors">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Role</p>
+<div class="flex justify-between items-start">
+<p class="font-body-lg text-body-lg text-on-surface">Senior Account Executive</p>
+<span class="material-symbols-outlined text-[18px] text-primary opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">edit</span>
+</div>
+</div>
+</div>
+<!-- Account Settings Field -->
+<div class="flex items-center px-4 py-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[24px]">manage_accounts</span>
+</div>
+<div class="flex-1 border-b border-outline-variant/30 pb-3 group-hover:border-transparent transition-colors">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Settings</p>
+<div class="flex justify-between items-center">
+<p class="font-body-lg text-body-lg text-on-surface">Account Settings</p>
+<span class="material-symbols-outlined text-[18px] text-outline">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Notification Preferences Field -->
+<div class="flex items-center px-4 py-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[24px]">notifications</span>
+</div>
+<div class="flex-1 border-b border-outline-variant/30 pb-3 group-hover:border-transparent transition-colors">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Preferences</p>
+<div class="flex justify-between items-center">
+<p class="font-body-lg text-body-lg text-on-surface">Notification Preferences</p>
+<span class="material-symbols-outlined text-[18px] text-outline">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Organization Info Field -->
+<div class="flex items-center px-4 py-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[24px]">domain</span>
+</div>
+<div class="flex-1 border-b border-outline-variant/30 pb-3 group-hover:border-transparent transition-colors">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Organization</p>
+<div class="flex justify-between items-center">
+<p class="font-body-lg text-body-lg text-on-surface">Organization Info</p>
+<span class="material-symbols-outlined text-[18px] text-outline">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Security Field -->
+<div class="flex items-center px-4 py-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[24px]">security</span>
+</div>
+<div class="flex-1 border-b border-outline-variant/30 pb-3 group-hover:border-transparent transition-colors">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">Privacy</p>
+<div class="flex justify-between items-center">
+<p class="font-body-lg text-body-lg text-on-surface">Security</p>
+<span class="material-symbols-outlined text-[18px] text-outline">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Log Out Field -->
+<div class="flex items-center px-4 py-3 mt-4 rounded-lg hover:bg-error-container/50 transition-colors group cursor-pointer">
+<div class="w-10 flex-shrink-0 flex items-center justify-center text-error">
+<span class="material-symbols-outlined text-[24px]">logout</span>
+</div>
+<div class="flex-1 pb-3 pt-1 border-b border-outline-variant/30 group-hover:border-transparent transition-colors">
+<div class="flex justify-between items-center">
+<p class="font-body-lg text-body-lg text-error">Log Out</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-4 left-4 right-4 z-50 flex justify-around items-center py-2 px-2 bg-surface-container shadow-md rounded-full max-w-md mx-auto md:hidden border border-outline-variant/20">
+<!-- Chats -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 scale-95 active:scale-90 transition-transform hover:bg-surface-container-highest rounded-full w-16">
+<span class="material-symbols-outlined mb-1">chat</span>
+<span class="font-label-lg text-label-lg">Chats</span>
+</button>
+<!-- Contacts -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 scale-95 active:scale-90 transition-transform hover:bg-surface-container-highest rounded-full w-16">
+<span class="material-symbols-outlined mb-1">contacts</span>
+<span class="font-label-lg text-label-lg">Contacts</span>
+</button>
+<!-- Dashboard -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 scale-95 active:scale-90 transition-transform hover:bg-surface-container-highest rounded-full w-16">
+<span class="material-symbols-outlined mb-1">dashboard</span>
+<span class="font-label-lg text-label-lg">Dashboard</span>
+</button>
+<!-- Profile (Active) -->
+<button class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1.5 scale-95 active:scale-90 transition-transform shadow-inner w-16">
+<span class="material-symbols-outlined mb-0.5" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-label-lg text-label-lg">Profile</span>
+</button>
+</nav>
+</body></html>

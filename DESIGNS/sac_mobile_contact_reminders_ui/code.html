@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Contact Profile - Souken Labs</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary": "#00326b",
+                    "surface-bright": "#f8f9ff",
+                    "on-tertiary-fixed-variant": "#3e4851",
+                    "on-secondary": "#ffffff",
+                    "on-background": "#0b1c30",
+                    "secondary-container": "#5dfd8a",
+                    "tertiary-fixed-dim": "#bdc8d3",
+                    "error-container": "#ffdad6",
+                    "outline": "#737782",
+                    "surface-container": "#e5eeff",
+                    "tertiary": "#2b343d",
+                    "on-tertiary-container": "#b1bbc6",
+                    "background": "#f8f9ff",
+                    "surface-variant": "#d3e4fe",
+                    "on-primary-container": "#95b9ff",
+                    "surface-container-highest": "#d3e4fe",
+                    "on-secondary-fixed-variant": "#005322",
+                    "primary-fixed": "#d7e2ff",
+                    "on-primary": "#ffffff",
+                    "surface-container-low": "#eff4ff",
+                    "surface-container-lowest": "#ffffff",
+                    "surface": "#f8f9ff",
+                    "surface-tint": "#2f5ea6",
+                    "on-primary-fixed-variant": "#0a458c",
+                    "secondary-fixed": "#66ff8e",
+                    "secondary": "#006d2f",
+                    "primary-fixed-dim": "#abc7ff",
+                    "on-primary-fixed": "#001b3f",
+                    "on-error": "#ffffff",
+                    "on-tertiary-fixed": "#131d25",
+                    "primary-container": "#10488f",
+                    "inverse-primary": "#abc7ff",
+                    "on-tertiary": "#ffffff",
+                    "surface-container-high": "#dce9ff",
+                    "error": "#ba1a1a",
+                    "outline-variant": "#c3c6d2",
+                    "surface-dim": "#cbdbf5",
+                    "tertiary-container": "#414b54",
+                    "on-surface-variant": "#434751",
+                    "inverse-surface": "#213145",
+                    "on-error-container": "#93000a",
+                    "tertiary-fixed": "#d9e4ef",
+                    "on-secondary-container": "#007232",
+                    "secondary-fixed-dim": "#3de273",
+                    "on-surface": "#0b1c30",
+                    "on-secondary-fixed": "#002109",
+                    "inverse-on-surface": "#eaf1ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "container-padding": "12px",
+                    "gutter": "16px",
+                    "sidebar-width": "240px",
+                    "unit": "4px",
+                    "info-panel-width": "300px",
+                    "thread-list-width": "320px"
+            },
+            "fontFamily": {
+                    "headline-lg": [
+                            "Plus Jakarta Sans"
+                    ],
+                    "label-lg": [
+                            "Plus Jakarta Sans"
+                    ],
+                    "label-md": [
+                            "Plus Jakarta Sans"
+                    ],
+                    "body-md": [
+                            "Plus Jakarta Sans"
+                    ],
+                    "caption": [
+                            "Plus Jakarta Sans"
+                    ],
+                    "body-lg": [
+                            "Plus Jakarta Sans"
+                    ],
+                    "headline-md": [
+                            "Plus Jakarta Sans"
+                    ]
+            },
+            "fontSize": {
+                    "headline-lg": [
+                            "20px",
+                            {
+                                    "lineHeight": "28px",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "label-lg": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "label-md": [
+                            "11px",
+                            {
+                                    "lineHeight": "14px",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "body-md": [
+                            "13px",
+                            {
+                                    "lineHeight": "18px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "caption": [
+                            "10px",
+                            {
+                                    "lineHeight": "12px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "body-lg": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "headline-md": [
+                            "16px",
+                            {
+                                    "lineHeight": "24px",
+                                    "fontWeight": "600"
+                            }
+                    ]
+            }
+        },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f8f9ff;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen pb-24">
+<!-- Top App Bar -->
+<header class="w-full top-0 sticky bg-surface border-b border-outline-variant flex items-center justify-between px-container-padding h-14 z-40">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary cursor-pointer active:opacity-70" data-icon="close">close</span>
+<h1 class="font-headline-lg text-headline-lg font-bold text-primary">Contact info</h1>
+</div>
+</header>
+<!-- Main Content -->
+<main class="max-w-[800px] mx-auto p-4 space-y-4">
+<!-- Profile Header Card -->
+<div class="bg-surface-container rounded-xl p-6 flex flex-col items-center text-center">
+<div class="w-20 h-20 bg-surface-bright rounded-full flex items-center justify-center mb-4 overflow-hidden border-2 border-surface">
+<img alt="Souken Labs Profile Image" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBv67gl_ylF5d0ExRegQMVp44euMavkAX-AJ-ynv0IhhrThUARajGFxw4PUNry0HUPrvbqx8se2997_Vn0ONC8Jp-rrElGn_AXlp6SStteaEVR4-p4jjX8BU-gEXzsdNZ257UUUUBg5Mn8nMhhOy-zRQ_VbpxalmMh2IX6rrkJFZMHkwigoBN-tJ3amydVm8Z5y26ieCBQ2chiruFhSRt4wqnSBO_XCngDsEpxaqtFwKHAYUPI6FYg6ez-T9-mLhbr-wv8"/>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-1">Souken Labs</h2>
+<div class="flex items-center gap-1 text-on-surface-variant font-body-md mb-2">
+<span class="material-symbols-outlined text-[16px]">call</span>
+<span>+91 7012990510</span>
+</div>
+<div class="bg-surface-bright px-3 py-1 rounded-full flex items-center gap-2">
+<span class="material-symbols-outlined text-[#25D366] text-[16px]">chat</span>
+<span class="font-label-md text-label-md text-on-surface">@soukenlr90</span>
+</div>
+</div>
+<!-- Tabs -->
+<div class="flex border-b border-outline-variant">
+<button class="flex-1 py-3 text-center border-b-2 border-transparent text-on-surface-variant font-body-md text-body-md hover:bg-surface-container-low transition-colors">
+                Details
+            </button>
+<button class="flex-1 py-3 text-center border-b-2 border-primary text-primary font-label-lg text-label-lg">
+                Reminders
+            </button>
+</div>
+<!-- Lead Management Card -->
+<div class="space-y-6">
+<!-- Set a New Reminder Card -->
+<div class="bg-surface-container-low rounded-xl p-4 space-y-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface font-bold">notifications_active</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Set a New Reminder</h3>
+</div>
+<div class="bg-surface-bright rounded-lg border border-outline-variant p-3">
+<textarea class="w-full bg-transparent border-none outline-none font-body-md text-on-surface resize-none p-0" placeholder="Reminder text" rows="2"></textarea>
+</div>
+<div class="relative">
+<label class="absolute -top-2 left-3 bg-surface-container-low px-1 text-label-md text-on-surface-variant">Reminder Time</label>
+<div class="w-full border border-primary rounded-lg px-3 py-2 flex justify-between items-center">
+<span class="font-body-md text-on-surface">08/16/2026 02:26 PM</span>
+<span class="material-symbols-outlined text-on-surface-variant">calendar_today</span>
+</div>
+</div>
+<button class="w-full bg-on-primary-container text-on-primary font-label-lg py-3 rounded-full active:opacity-70 transition-opacity">
+      Add Reminder
+    </button>
+</div>
+<!-- Upcoming Reminders Section -->
+<div class="space-y-4">
+<h3 class="font-headline-md text-headline-md text-on-surface">Upcoming Reminders</h3>
+<div class="py-12 text-center">
+<p class="font-body-md text-on-surface-variant">No pending reminders for this chat.</p>
+</div>
+</div>
+</div>
+<!-- Profile Details Card -->
+<!-- Useful Actions Card -->
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="md:hidden fixed bottom-4 left-4 right-4 rounded-full shadow-md z-50 flex justify-around items-center py-2 px-2 bg-surface-container">
+<!-- Chats (Inactive) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 scale-95 active:scale-90 transition-transform hover:bg-surface-container-highest rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="chat">chat</span>
+<span class="font-label-lg text-label-lg mt-1">Chats</span>
+</a>
+<!-- Contacts (Active) -->
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-5 py-1 scale-95 active:scale-90 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="contacts" style="font-variation-settings: 'FILL' 1;">contacts</span>
+<span class="font-label-lg text-label-lg mt-1">Contacts</span>
+</a>
+<!-- Dashboard (Inactive) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 scale-95 active:scale-90 transition-transform hover:bg-surface-container-highest rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-lg text-label-lg mt-1">Dashboard</span>
+</a>
+<!-- Profile (Inactive) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 scale-95 active:scale-90 transition-transform hover:bg-surface-container-highest rounded-full" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-lg text-label-lg mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,327 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Proton CRM - Inbox</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-bright": "#f8f9ff",
+                        "on-primary-fixed-variant": "#0a458c",
+                        "on-secondary-container": "#007232",
+                        "error": "#ba1a1a",
+                        "outline": "#737782",
+                        "surface-variant": "#d3e4fe",
+                        "primary-container": "#10488f",
+                        "primary-fixed-dim": "#abc7ff",
+                        "surface-tint": "#2f5ea6",
+                        "secondary": "#006d2f",
+                        "on-secondary-fixed": "#002109",
+                        "on-primary": "#ffffff",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed-dim": "#3de273",
+                        "tertiary": "#2b343d",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#bdc8d3",
+                        "on-tertiary-fixed-variant": "#3e4851",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#434751",
+                        "secondary-container": "#5dfd8a",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "secondary-fixed": "#66ff8e",
+                        "on-error": "#ffffff",
+                        "background": "#f8f9ff",
+                        "tertiary-fixed": "#d9e4ef",
+                        "tertiary-container": "#414b54",
+                        "surface-container": "#e5eeff",
+                        "surface-container-low": "#eff4ff",
+                        "inverse-primary": "#abc7ff",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface-dim": "#cbdbf5",
+                        "on-surface": "#0b1c30",
+                        "on-primary-container": "#95b9ff",
+                        "on-primary-fixed": "#001b3f",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-secondary-fixed-variant": "#005322",
+                        "on-tertiary-container": "#b1bbc6",
+                        "on-tertiary-fixed": "#131d25",
+                        "surface": "#f8f9ff",
+                        "inverse-surface": "#213145",
+                        "on-background": "#0b1c30",
+                        "outline-variant": "#c3c6d2",
+                        "primary": "#00326b",
+                        "surface-container-high": "#dce9ff",
+                        "primary-fixed": "#d7e2ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "container-padding": "12px",
+                        "info-panel-width": "300px",
+                        "sidebar-width": "240px",
+                        "thread-list-width": "320px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "body-md": ["Plus Jakarta Sans"],
+                        "label-lg": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "caption": ["Plus Jakarta Sans"],
+                        "label-md": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "body-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "label-lg": ["12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "headline-lg": ["20px", { "lineHeight": "28px", "fontWeight": "700" }],
+                        "body-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "caption": ["10px", { "lineHeight": "12px", "fontWeight": "400" }],
+                        "label-md": ["11px", { "lineHeight": "14px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface h-screen flex flex-col overflow-hidden">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-container-padding py-2 bg-surface docked full-width top-0 z-50">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer p-2 hover:bg-surface-variant/50 transition-colors duration-200 rounded-full">menu</span>
+<h1 class="font-headline-lg text-headline-lg font-bold text-primary">Proton CRM</h1>
+</div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer p-2 hover:bg-surface-variant/50 transition-colors duration-200 rounded-full">more_vert</span>
+</div>
+</header>
+<!-- Search & Filters -->
+<div class="px-gutter pt-2 pb-3 bg-surface/95 backdrop-blur-sm sticky top-[56px] z-40 border-b border-outline-variant/30 shadow-sm">
+<!-- Channel & Account Selection -->
+<div class="flex gap-2 mb-3">
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface font-body-md font-medium flex-1 justify-between hover:bg-surface-container transition-colors shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary">chat</span>
+<span>Channel: All</span>
+</div>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">expand_more</span>
+</button>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-on-surface font-body-md font-medium flex-1 justify-between hover:bg-surface-container transition-colors shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary">account_circle</span>
+<span>Account: All</span>
+</div>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">expand_more</span>
+</button>
+</div>
+<div class="relative mb-3">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg py-2.5 pl-10 pr-4 font-body-md text-on-surface focus:ring-1 focus:ring-primary-container/50 transition-shadow shadow-sm" placeholder="Ask Meta AI or Search" type="text">
+</div>
+<div class="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+<button class="bg-primary-container text-on-primary font-label-lg px-4 py-1.5 rounded-lg whitespace-nowrap transition-transform active:scale-95 shadow-sm">All</button>
+<button class="bg-surface-container border border-outline-variant/30 text-on-surface font-label-lg px-4 py-1.5 rounded-lg whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-container-highest shadow-sm">Unread</button>
+<button class="bg-surface-container border border-outline-variant/30 text-on-surface font-label-lg px-4 py-1.5 rounded-lg whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-container-highest shadow-sm">Open</button>
+<button class="bg-surface-container border border-outline-variant/30 text-on-surface font-label-lg px-4 py-1.5 rounded-lg whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-container-highest shadow-sm">Starred</button>
+<button class="bg-surface-container border border-outline-variant/30 text-on-surface font-label-lg px-4 py-1.5 rounded-lg whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-container-highest shadow-sm">Ad clicks</button>
+<button class="bg-surface-container border border-outline-variant/30 text-on-surface font-label-lg px-4 py-1.5 rounded-lg whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-container-highest shadow-sm">Assigned</button>
+</div>
+<!-- Dropdown Query Filters -->
+<div class="flex gap-2 mt-1">
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/50 text-on-surface-variant font-label-md font-medium hover:bg-surface-container-low transition-colors">
+Departments
+<span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/50 text-on-surface-variant font-label-md font-medium hover:bg-surface-container-low transition-colors">
+Quick Assist
+<span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+</div>
+</div>
+<!-- Main Content Area: Chat List -->
+<main class="flex-1 overflow-y-auto pb-32">
+<!-- Archived Section -->
+<div class="flex items-center px-gutter py-3 hover:bg-surface-container-low cursor-pointer transition-colors border-b border-outline-variant/20">
+<div class="w-12 h-12 flex items-center justify-center mr-3">
+<span class="material-symbols-outlined text-on-surface-variant">archive</span>
+</div>
+<div class="flex-1 font-body-lg text-on-surface font-semibold">
+                Archived
+            </div>
+</div>
+<!-- Chat Items -->
+<div class="flex flex-col">
+<!-- Chat Item 1 -->
+<div class="flex items-center px-gutter py-3 hover:bg-surface-container-low cursor-pointer transition-colors group relative">
+<div class="relative w-12 h-12 rounded-full overflow-hidden mr-3 bg-surface-container-highest flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a man with short dark hair and a beard, wearing a light grey shirt, smiling slightly, set against a bright, softly blurred office background in a modern light-mode style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBocjP7VQnAgpG8S0AQFAvh1oGVMNzuZ8ofGcB0DSNXsrcaFLX43iDfX6eTOhbeFlUkEKfQ1BMyfGO_ZD-Ra0wYyBBm-0bliMOpFXbM3WCgIbHAE3tWdt1k0x3KXN7Pz-9DGa-nvdxGf4UCgJ8xuhrG3ji1bpGjOjZ-gvZw1106ZsWShBgq8UgmoA0L5tCqjjQT_kVqdu4Vlgj3dSVTNwFGJ6930FqXQd-wXPxeLMX9i6Z-Vu-T1Nt0fg">
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-center mb-0.5">
+<h3 class="font-body-lg text-on-surface truncate">Afthab (You)</h3>
+<span class="font-caption text-on-surface-variant whitespace-nowrap">Yesterday</span>
+</div>
+<div class="flex items-center">
+<span class="material-symbols-outlined text-primary-container text-[14px] mr-1">done_all</span>
+<p class="font-body-md text-on-surface-variant truncate">myNewAliDcodedGmail@5384</p>
+</div>
+</div>
+<div class="flex flex-col items-end justify-center w-8">
+<span class="material-symbols-outlined text-outline text-[18px]">push_pin</span>
+</div>
+</div>
+<!-- Chat Item 2 -->
+<div class="flex items-center px-gutter py-3 hover:bg-surface-container-low cursor-pointer transition-colors group relative">
+<div class="relative w-12 h-12 rounded-full mr-3 bg-surface-variant text-on-surface flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined font-bold">group</span>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-center mb-0.5">
+<h3 class="font-body-lg text-on-surface truncate">Ginger Conf</h3>
+<span class="font-caption text-on-surface-variant whitespace-nowrap">15/01/26</span>
+</div>
+<div class="flex items-center">
+<span class="material-symbols-outlined text-outline text-[14px] mr-1">check</span>
+<p class="font-body-md text-on-surface-variant truncate">You: ffs</p>
+</div>
+</div>
+<div class="flex flex-col items-end justify-center w-8">
+<span class="material-symbols-outlined text-outline text-[18px]">push_pin</span>
+</div>
+</div>
+<!-- Chat Item 3 -->
+<div class="flex items-center px-gutter py-3 bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors group relative">
+<div class="relative w-12 h-12 rounded-full overflow-hidden mr-3 bg-surface-container-highest flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A candid group photo of several young men posing together outdoors, smiling and casually dressed, captured in bright daylight with a vibrant, welcoming atmosphere." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCnB4pkpNdb-L6Bvh7HG8DnmoghrTeGIMrz0wk3e6OdGY9uYnK9CxbJV1nx2Ia5gJnRxqFvHg7s_1RZZ7nS5tLQf8QbGUG6SyN7OXrc9n-nSG_UzWpbUhy2JHPuKAugGpdxkzKAeGjLN8D7Mi8yq-d6FpbYZ-N3PAU959wh0BBO2XKBjVaWT6l56npfqLqyAq7Vt0rAXyOn_9ZFDCrraCP8rdpm72QyUmoKbchOsOGXkyBXeESnSrnWw">
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-center mb-0.5">
+<h3 class="font-body-lg text-on-surface truncate font-semibold">അൽ തേരാ വൽ പാരാ 💥</h3>
+<span class="font-caption text-on-surface-variant whitespace-nowrap">10/05/26</span>
+</div>
+<div class="flex items-center">
+<span class="font-body-md text-on-surface-variant font-medium mr-1">Ismail O:</span>
+<span class="material-symbols-outlined text-outline text-[14px] mr-1">image</span>
+<p class="font-body-md text-on-surface-variant truncate">Photo</p>
+</div>
+</div>
+<div class="flex flex-col items-end justify-center w-8">
+<span class="material-symbols-outlined text-outline text-[18px]">push_pin</span>
+</div>
+</div>
+<!-- Chat Item 4 - Unread -->
+<div class="flex items-center px-gutter py-3 bg-surface-bright hover:bg-surface-container-low cursor-pointer transition-colors group relative">
+<div class="relative w-12 h-12 rounded-full mr-3 bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined font-bold">group</span>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-center mb-0.5">
+<h3 class="font-body-lg text-on-surface font-bold truncate">Kuri 5000 (April 2026 - Nov 2027)</h3>
+<span class="font-caption text-primary-container font-semibold whitespace-nowrap">Yesterday</span>
+</div>
+<div class="flex items-center">
+<span class="font-body-md text-on-surface font-medium mr-1">Ramees:</span>
+<p class="font-body-md text-on-surface truncate font-medium">Kuri 5000/month list (Aug) Payment due d...</p>
+</div>
+</div>
+<div class="flex flex-col items-end justify-center w-8">
+<div class="w-5 h-5 bg-secondary text-on-secondary rounded-full flex items-center justify-center font-caption font-bold">1</div>
+</div>
+</div>
+<!-- Chat Item 5 - Unread -->
+<div class="flex items-center px-gutter py-3 bg-surface-bright hover:bg-surface-container-low cursor-pointer transition-colors group relative">
+<div class="relative w-12 h-12 rounded-full overflow-hidden mr-3 bg-error-container flex-shrink-0 border border-outline-variant/30">
+<img class="w-full h-full object-cover p-1" data-alt="A vibrant red circular logo featuring golden text and a graphic elements, typical of a regional or political organization emblem, set against a clean white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbMzkSNagTWoNpX0ih-YPuHfYXOu5kQIpSLhu5E2C0x4Un9EF_9v4pweQnIu0S5P3QsE2EMD8yZqj-FDONEU-2V454DMpOcpnAeaECGlA1iw8RLDPsYFZEiq-qpD2nzl6mu21lxbNScxz1uYls09JolXYRHNvVbOs66xtvKt4lzojQc1EzT2EnMIWvPILxjdgQ7fDo1_2IJtoWY8GIg1-3hO2Dp4sfsRvgqoH6OLd_c67Sn-fIfx23KA">
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-center mb-0.5">
+<h3 class="font-body-lg text-on-surface font-bold truncate">Malappuram district kerala vettri kazhakam</h3>
+<span class="font-caption text-primary-container font-semibold whitespace-nowrap">Yesterday</span>
+</div>
+<div class="flex items-center">
+<span class="font-body-md text-on-surface font-medium mr-1">~ Reiner Kuniyath:</span>
+<p class="font-body-md text-on-surface truncate font-medium">പ്രിയമുള്ളവരെ, രജിസ്ട്രേഷൻ...</p>
+</div>
+</div>
+<div class="flex flex-col items-end justify-center w-8">
+<div class="w-5 h-5 bg-secondary text-on-secondary rounded-full flex items-center justify-center font-caption font-bold">1</div>
+</div>
+</div>
+<!-- Chat Item 6 -->
+<div class="flex items-center px-gutter py-3 hover:bg-surface-container-low cursor-pointer transition-colors group relative">
+<div class="relative w-12 h-12 rounded-full overflow-hidden mr-3 bg-surface-container-highest flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A stylized illustration of people collaborating around a large desk with computers, representing a modern creative agency or web development team, using bright primary colors on a light background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB6a3XEpDRsA0Z3PlcoZeOro5WMrASHOapNONS3ua6e6AUqrIC5-wQWglno-3_4oxlN13DNjMmJJVNoSdVZg91nJTnvJDnDQ_68gE8oI4Pzo5EziN9LNiODy-dthIsXLUDM7Yt_j4aFAaVFIeFxAjXjvGt_XibOfbRKdW9JTpp5Nrotlb6GFDn-yORWjvdtF6YEfpnZHMcN8MEfJjMeSbVcunJhH-cgjo4A8DwV4JgKzkeOMUEsBhZo1Q">
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-center mb-0.5">
+<h3 class="font-body-lg text-on-surface truncate">Web World - Ginger</h3>
+<span class="font-caption text-on-surface-variant whitespace-nowrap">Yesterday</span>
+</div>
+<div class="flex items-center">
+<span class="material-symbols-outlined text-outline text-[14px] mr-1">done_all</span>
+<span class="font-body-md text-on-surface-variant font-medium mr-1">You:</span>
+<span class="material-symbols-outlined text-outline text-[14px] mr-1">image</span>
+<p class="font-body-md text-on-surface-variant truncate">Photo</p>
+</div>
+</div>
+<div class="flex flex-col items-end justify-center w-8">
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action Button -->
+<button class="fixed bottom-28 right-4 w-14 h-14 bg-secondary text-on-secondary rounded-xl shadow-lg flex items-center justify-center hover:bg-secondary/90 transition-transform active:scale-95 z-40">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">add</span>
+</button>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-4 left-4 right-4 z-50 flex justify-around items-center bg-surface/85 backdrop-blur-md pb-2 pt-2 px-2 border border-outline-variant/20 shadow-lg rounded-2xl"><button class="flex flex-col items-center justify-center bg-surface-container text-primary-container rounded-full px-5 py-1 transition-transform scale-95 active:scale-90 relative">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">chat</span>
+<span class="font-label-md text-label-md mt-1">Chats</span>
+<div class="absolute top-0 right-2 w-2 h-2 bg-secondary rounded-full border border-surface"></div>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant py-1 transition-transform scale-95 active:scale-90 hover:bg-surface-container-low rounded-xl px-4">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-md text-label-md mt-1">Contacts</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant py-1 transition-transform scale-95 active:scale-90 hover:bg-surface-container-low rounded-xl px-4">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-md text-label-md mt-1">Dashboard</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant py-1 transition-transform scale-95 active:scale-90 hover:bg-surface-container-low rounded-xl px-4">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-label-md text-label-md mt-1">Profile</span>
+</button></nav>
+</body></html>
