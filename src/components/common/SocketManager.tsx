@@ -38,9 +38,10 @@ export default function SocketManager() {
       if (processedKeysRef.current.has(key)) return;
       processedKeysRef.current.add(key);
       
-      // Cap deduplication cache size
+      // Bounded LRU cache eviction (O(1) first item deletion)
       if (processedKeysRef.current.size > 2000) {
-        processedKeysRef.current = new Set(Array.from(processedKeysRef.current).slice(-1500));
+        const firstKey = processedKeysRef.current.values().next().value;
+        if (firstKey) processedKeysRef.current.delete(firstKey);
       }
 
       console.log('🔌 [SOCKET] Received new message:', msgId);

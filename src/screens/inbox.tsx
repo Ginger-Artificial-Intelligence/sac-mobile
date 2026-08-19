@@ -1,17 +1,21 @@
 import {
-  ScrollView, View, TextInput, Pressable, RefreshControl,
-  Alert, Animated, PanResponder, useAnimatedValue,
+  ScrollView, View, TextInput, Pressable,
+  Alert,
 } from "react-native";
 import { Text } from "../components/ui/Text";
 import { Icon } from "../components/ui/Icon";
 import { LoadingSpinner } from "../components/ui/Loading";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { useSyncStore, Chat } from "../store/syncStore";
 import { FlashList } from "@shopify/flash-list";
 import API from "../config/axios";
 import { NativeDropdown } from "../components/ui/NativeDropdown";
+import { storage } from "../store/mmkv";
+import { useThemeStore } from "../store/themeStore";
+import { HapticPressable } from "@/components/ui/HapticPressable";
+import { Image } from "expo-image";
 
 // ─── Tab filter mapping (matches ChatFilterTab from v1) ───────────────────────
 type FilterTab = "All" | "Unread" | "Open" | "Starred" | "Referral" | "Assigned";
@@ -60,134 +64,308 @@ function SelectionBar({
   );
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-// ─── Individual chat row (selection & actions) ─────────────────────────
-const ChatRow = ({
-  chat,
-  selected,
-  selecting,
-  onPress,
-  onLongPress,
-}: {
-  chat: Chat;
-  selected: boolean;
-  selecting: boolean;
-  onPress: () => void;
-  onLongPress: () => void;
+// ─── Chat Avatar (image or initials) ─────────────────────────────────────────
+const ChatAvatar = memo(({ avatar, name, size, isDark, primaryColor }: {
+  avatar: string | null;
+  name: string;
+  size: number;
+  isDark: boolean;
+  primaryColor: string;
 }) => {
-  const pressAnim = useRef(new Animated.Value(0)).current;
-
-  const handlePressIn = () => {
-    pressAnim.stopAnimation();
-    Animated.sequence([
-      Animated.timing(pressAnim, {
-        toValue: 1,
-        duration: 0,
-        useNativeDriver: false,
-      }),
-      Animated.delay(0),
-      Animated.timing(pressAnim, {
-        toValue: 0,
-        duration: 350,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  };
-
-  const handlePressOut = () => {
-    // Let the sequence complete naturally
-  };
-
-  const formattedTime = chat.updatedAt
-    ? new Date(chat.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : '';
-
-  const animatedBg = selected
-    ? '#e8eeff'
-    : pressAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['#ffffff', 'rgba(0, 50, 107, 0.08)'],
-    });
+  const [imgError, setImgError] = useState(false);
+  const isUrl = !imgError && avatar
+    ? (avatar.startsWith('http://') || avatar.startsWith('https://'))
+    : false;
+  const initial = (avatar && avatar.length <= 2) ? avatar : (name?.charAt(0)?.toUpperCase() ?? '?');
 
   return (
-    <AnimatedPressable
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={100}
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: animatedBg as any,
-        },
-      ]}
-    >
-      {/* Selection checkbox */}
-      {selecting && (
-        <View style={{
-          width: 22, height: 22, borderRadius: 11, borderWidth: 2,
-          borderColor: selected ? '#00326b' : '#9aa0a6',
-          backgroundColor: selected ? '#00326b' : 'transparent',
-          alignItems: 'center', justifyContent: 'center', marginRight: 10,
-        }}>
-          {selected && <Icon name="check" size={14} color="#fff" />}
-        </View>
-      )}
-
-      {/* Avatar */}
-      <View style={{
-        width: 48, height: 48, borderRadius: 24, marginRight: 12,
-        backgroundColor: '#dde3f9', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Text style={{ fontSize: 18, fontWeight: '700', color: '#00326b' }}>
-          {chat.avatar ?? chat.name?.charAt(0)?.toUpperCase() ?? '?'}
+    <View style={{
+      width: size, height: size, borderRadius: size / 2, marginRight: 12,
+      backgroundColor: isDark ? '#1e3048' : '#dde3f9',
+      alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    }}>
+      {isUrl ? (
+        <Image
+          source={{ uri: avatar! }}
+          style={{ width: size, height: size }}
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <Text style={{ fontSize: size * 0.375, fontWeight: '700', color: primaryColor }}>
+          {initial}
         </Text>
-      </View>
+      )}
+    </View>
+  );
+});
 
-      {/* Content */}
-      <View style={{ flex: 1, paddingRight: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Text numberOfLines={1} style={{ fontWeight: chat.unreadCount > 0 ? '700' : '500', fontSize: 15, flex: 1 }}>
+
+// ─── Individual chat row (selection & actions) ─────────────────────────
+const ChatRow = memo(
+  ({
+    chat,
+    selected,
+    selecting,
+    onPress,
+    onLongPress,
+  }: {
+    chat: Chat;
+    selected: boolean;
+    selecting: boolean;
+    onPress: () => void;
+    onLongPress: () => void;
+  }) => {
+    const isDark = useThemeStore((state) => state.isDark);
+    const colors = useThemeStore((state) => state.colors);
+
+    const hasUnread = chat.unreadCount > 0;
+
+    const formattedTime = useMemo(() => {
+      if (!chat.updatedAt) return "";
+
+      return new Date(chat.updatedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }, [chat.updatedAt]);
+
+    const initial =
+      chat.avatar && chat.avatar.length <= 2
+        ? chat.avatar
+        : chat.name?.charAt(0)?.toUpperCase() ?? "?";
+
+    return (
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        style={({ pressed }) => ({
+          width: "100%",
+          minHeight: 72,
+
+          flexDirection: "row",
+          alignItems: "center",
+
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+
+          backgroundColor: selected
+            ? isDark
+              ? "#1a293d"
+              : "#e8eeff"
+            : pressed
+              ? isDark
+                ? "rgba(255,255,255,0.06)"
+                : "rgba(0,50,107,0.05)"
+              : colors.surfaceContainerLowest,
+        })}
+      >
+        {/* Selection */}
+        {selecting && (
+          <View
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 11,
+
+              borderWidth: 2,
+              borderColor: selected
+                ? colors.primary
+                : colors.outline,
+
+              backgroundColor: selected
+                ? colors.primary
+                : "transparent",
+
+              alignItems: "center",
+              justifyContent: "center",
+
+              marginRight: 10,
+            }}
+          >
+            {selected && (
+              <Icon
+                name="check"
+                size={14}
+                color="#fff"
+              />
+            )}
+          </View>
+        )}
+
+        {/* Avatar */}
+        <View
+          style={{
+            width: 52,
+            height: 52,
+            borderRadius: 26,
+
+            marginRight: 12,
+
+            backgroundColor: isDark
+              ? "#1e3048"
+              : "#dde3f9",
+
+            alignItems: "center",
+            justifyContent: "center",
+
+            overflow: "hidden",
+
+            flexShrink: 0,
+          }}
+        >
+          {chat.avatar?.startsWith("http") ? (
+            <Image
+              source={{ uri: chat.avatar }}
+              style={{
+                width: 52,
+                height: 52,
+              }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <Text
+              style={{
+                fontSize: 19,
+                fontWeight: "700",
+                color: colors.primary,
+              }}
+            >
+              {initial}
+            </Text>
+          )}
+        </View>
+
+        {/* Main content */}
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            justifyContent: "center",
+          }}
+        >
+          {/* Name + time */}
+          <View
+            style={{
+              width: "100%",
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={{
+                flex: 1,
+                minWidth: 0,
+
+                fontSize: 15,
+                fontWeight: hasUnread
+                  ? "700"
+                  : "600",
+
+                color: colors.onSurface,
+              }}
+            >
               {chat.name}
             </Text>
+
+            <Text
+              style={{
+                marginLeft: 8,
+
+                fontSize: 11,
+                fontWeight: hasUnread
+                  ? "600"
+                  : "400",
+
+                color: hasUnread
+                  ? colors.secondary
+                  : colors.outline,
+
+                flexShrink: 0,
+              }}
+            >
+              {formattedTime}
+            </Text>
           </View>
-          <Text style={{ fontSize: 11, color: '#737782', marginLeft: 8 }}>{formattedTime}</Text>
+
+          {/* Last message */}
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={{
+              fontSize: 13,
+
+              color: hasUnread
+                ? colors.onSurface
+                : colors.outline,
+
+              fontWeight: hasUnread
+                ? "500"
+                : "400",
+            }}
+          >
+            {chat.lastMessage || " "}
+          </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {chat.channel && (
-            <View style={{ backgroundColor: '#eef0fb', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, marginRight: 5 }}>
-              <Text style={{ fontSize: 10, color: '#00326b', fontWeight: '600' }}>
-                {chat.channel.toUpperCase()}
+
+        {/* Unread / pin */}
+        <View
+          style={{
+            width: 28,
+
+            marginLeft: 8,
+
+            alignItems: "center",
+            justifyContent: "center",
+
+            flexShrink: 0,
+          }}
+        >
+          {hasUnread ? (
+            <View
+              style={{
+                minWidth: 20,
+                height: 20,
+
+                paddingHorizontal: 5,
+
+                borderRadius: 10,
+
+                backgroundColor: colors.secondary,
+
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text
+                style={{
+                  color: colors.onPrimary,
+                  fontSize: 10,
+                  fontWeight: "700",
+                }}
+              >
+                {chat.unreadCount > 99
+                  ? "99+"
+                  : chat.unreadCount}
               </Text>
             </View>
-          )}
-          {chat.lastMessage && (
-            <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: chat.unreadCount > 0 ? '#1a1a2e' : '#737782' }}>
-              {chat.lastMessage}
-            </Text>
-          )}
+          ) : chat.pinned ? (
+            <Icon
+              name="push-pin"
+              size={17}
+              color={colors.outline}
+            />
+          ) : null}
         </View>
-      </View>
-
-      {/* Right indicators */}
-      <View style={{ alignItems: 'flex-end', justifyContent: 'center', gap: 4 }}>
-        {chat.unreadCount > 0 ? (
-          <View style={{ minWidth: 20, height: 20, backgroundColor: '#00326b', borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
-            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-              {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </AnimatedPressable>
-  );
-};
+      </Pressable>
+    );
+  }
+);
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -221,6 +399,79 @@ export default function InboxScreen() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [fabExpanded, setFabExpanded] = useState(false);
 
+  // Cached Filter options state
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [keywords, setKeywords] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+
+  const loadCachedFilters = useCallback(() => {
+    try {
+      const accStr = storage.getString('cached_social_accounts');
+      if (accStr) setAccounts(JSON.parse(accStr));
+
+      const depStr = storage.getString('cached_departments');
+      if (depStr) setDepartments(JSON.parse(depStr));
+
+      const kwStr = storage.getString('cached_keywords');
+      if (kwStr) setKeywords(JSON.parse(kwStr));
+
+      const campStr = storage.getString('cached_campaigns');
+      if (campStr) setCampaigns(JSON.parse(campStr));
+    } catch (e) {
+      console.warn("Failed to load cached filter options:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCachedFilters();
+  }, [isSyncing]);
+
+  const accountOptions = useMemo(() => {
+    const opts = [{ label: "All Accounts", value: "All", channel: "all", phoneNumber: "" }];
+    accounts.forEach((acc: any) => {
+      const id = acc.phoneNumberId || acc.phone_number_id || acc.accountId || acc.account_id || acc._id;
+      const label = acc.name || acc.phoneNumber || acc.phoneNumberId || acc.accountLabel || acc.accountName;
+      const channel = acc.channel || "whatsapp";
+      const phoneNumber = channel.toLowerCase() === 'whatsapp' ? (acc.phoneNumber || acc.phone_number || "") : "";
+      if (id) opts.push({ label, value: id, channel, phoneNumber });
+    });
+    return opts;
+  }, [accounts]);
+
+  const departmentOptions = useMemo(() => {
+    const opts = [{ label: "All Departments", value: "All" }];
+    departments.forEach((dep: any) => {
+      const id = dep.id || dep._id;
+      const name = dep.name || dep.departmentName || "Department";
+      if (id) opts.push({ label: name, value: id });
+    });
+    return opts;
+  }, [departments]);
+
+  const quickAssistOptions = useMemo(() => {
+    const opts = [{ label: "All Keywords", value: "All" }];
+    keywords.forEach((kw: any) => {
+      const val = kw.keyword || kw.name || kw.id || kw._id;
+      if (val) opts.push({ label: val, value: val });
+    });
+    return opts;
+  }, [keywords]);
+
+  const campaignOptions = useMemo(() => {
+    const opts = [{ label: "All Campaigns", value: "All" }];
+    campaigns.forEach((camp: any) => {
+      const id = camp.id || camp._id;
+      const name = camp.name || camp.title || "Campaign";
+      if (id) opts.push({ label: name, value: id });
+    });
+    return opts;
+  }, [campaigns]);
+
+  const totalUnreadChats = useMemo(() => {
+    return chats.filter(c => c.unreadCount > 0).length;
+  }, [chats]);
+
   useEffect(() => {
     loadChats();
   }, []);
@@ -242,11 +493,7 @@ export default function InboxScreen() {
       label: "Account",
       icon: "account-circle",
       selectedValue: selectedAccount,
-      options: [
-        { label: "All Accounts", value: "All" },
-        { label: "Account 1", value: "account_1" },
-        { label: "Account 2", value: "account_2" },
-      ],
+      options: accountOptions,
       onSelect: setSelectedAccount,
     },
   ];
@@ -256,22 +503,14 @@ export default function InboxScreen() {
       label: "Department",
       icon: "domain",
       selectedValue: selectedDepartment,
-      options: [
-        { label: "All Departments", value: "All" },
-        { label: "Sales", value: "Sales" },
-        { label: "Support", value: "Support" },
-      ],
+      options: departmentOptions,
       onSelect: setSelectedDepartment,
     },
     {
       label: "Quick Assist",
       icon: "flash-on",
       selectedValue: selectedQuickAssist,
-      options: [
-        { label: "All Keywords", value: "All" },
-        { label: "Pricing", value: "Pricing" },
-        { label: "Setup", value: "Setup" },
-      ],
+      options: quickAssistOptions,
       onSelect: setSelectedQuickAssist,
     },
     {
@@ -292,37 +531,39 @@ export default function InboxScreen() {
       label: "Campaigns",
       icon: "campaign",
       selectedValue: selectedCampaign,
-      options: [
-        { label: "All Campaigns", value: "All" },
-        { label: "Promo", value: "Promo" },
-        { label: "Retention", value: "Retention" },
-      ],
+      options: campaignOptions,
       onSelect: setSelectedCampaign,
     },
   ];
 
-  // ── Filtering (local-first) ────────────────────────────────────────────────
+  // ── Filtering (local-first, fast property checks without JSON.parse) ─────
   const filteredChats = useMemo(() => {
-    let list = [...chats];
+    let list = chats;
 
     // Tab filter
-    switch (activeFilter) {
-      case 'Unread': list = list.filter((c) => c.unreadCount > 0); break;
-      case 'Open': list = list.filter((c) => c.isOpen); break;
-      case 'Starred': list = list.filter((c) => c.isStarred); break;
-      case 'Assigned': list = list.filter((c) => Boolean(c.assignedToName)); break;
-      case 'Referral': break; // referral not in local schema, skip
-    }
+    if (activeFilter === 'Unread') list = list.filter((c) => c.unreadCount > 0);
+    else if (activeFilter === 'Open') list = list.filter((c) => c.isOpen);
+    else if (activeFilter === 'Starred') list = list.filter((c) => c.isStarred);
+    else if (activeFilter === 'Assigned') list = list.filter((c) => Boolean(c.assignedToName));
 
     // Dropdown filters
     if (selectedChannel !== "All") {
       list = list.filter((c) => c.channel?.toLowerCase() === selectedChannel.toLowerCase());
     }
     if (selectedAccount !== "All") {
-      list = list.filter((c) => c.socialAccountId === selectedAccount);
+      list = list.filter((c) => c.socialAccountId === selectedAccount || c.accountId === selectedAccount);
     }
     if (selectedLeadStatus !== "All") {
       list = list.filter((c) => c.leadStage?.toLowerCase() === selectedLeadStatus.toLowerCase());
+    }
+    if (selectedDepartment !== "All") {
+      list = list.filter((c) => c.departmentId === selectedDepartment);
+    }
+    if (selectedQuickAssist !== "All") {
+      list = list.filter((c) => c.quickAssistKeyword?.toLowerCase() === selectedQuickAssist.toLowerCase());
+    }
+    if (selectedCampaign !== "All") {
+      list = list.filter((c) => c.campaignId === selectedCampaign);
     }
 
     // Search
@@ -335,13 +576,6 @@ export default function InboxScreen() {
       );
     }
 
-    // Pinned first
-    list.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-
     return list;
   }, [
     chats, activeFilter, searchText,
@@ -349,11 +583,32 @@ export default function InboxScreen() {
     selectedQuickAssist, selectedLeadStatus, selectedCampaign
   ]);
 
-  // ── Pull-to-refresh ────────────────────────────────────────────────────────
-  const onRefresh = useCallback(async () => {
+  // ── Pull-to-refresh (max 5s UI spinner, background sync continues) ───────
+  const onRefresh = useCallback(() => {
     setIsRefreshing(true);
-    await syncWithBackend();
-    setIsRefreshing(false);
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      if (isMounted) setIsRefreshing(false);
+    }, 5000);
+
+    (async () => {
+      try {
+        await syncWithBackend();
+        try {
+          await useSyncStore.getState().fetchAndCacheFilterOptions();
+        } catch (_) { }
+      } catch (err) {
+        console.warn("Background inbox sync error:", err);
+      } finally {
+        clearTimeout(timer);
+        if (isMounted) setIsRefreshing(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [syncWithBackend]);
 
   // ── Multi-select ───────────────────────────────────────────────────────────
@@ -363,47 +618,33 @@ export default function InboxScreen() {
     setSelectedIds(next);
   };
 
-  // ── Chat actions (optimistic + API) ───────────────────────────────────────
+  const bulkSetStarred = useSyncStore((state) => state.bulkSetStarred);
+  const bulkSetPinned = useSyncStore((state) => state.bulkSetPinned);
+
+  // ── Chat actions (optimistic + batch API) ─────────────────────────────────
   const togglePin = useCallback(async (chatId: string) => {
-    // Optimistic update in SQLite
-    const { db } = require('../db/client');
-    const { chats: chatsTable } = require('../db/schema');
-    const { eq } = require('drizzle-orm');
     const current = chats.find((c) => c.id === chatId);
     if (!current) return;
-    const newVal = !current.pinned;
-    await db.update(chatsTable).set({ pinned: newVal }).where(eq(chatsTable.id, chatId));
-    await loadChats();
-    // Fire API in background
-    API.patch(`/chats/toggle-chat-pin/${chatId}`).catch((e) =>
-      console.warn('[pin] API error:', e)
-    );
-  }, [chats]);
+    await bulkSetPinned([chatId], !current.pinned);
+  }, [chats, bulkSetPinned]);
 
   const toggleStar = useCallback(async (chatId: string) => {
-    const { db } = require('../db/client');
-    const { chats: chatsTable } = require('../db/schema');
-    const { eq } = require('drizzle-orm');
     const current = chats.find((c) => c.id === chatId);
     if (!current) return;
-    const newVal = !current.isStarred;
-    await db.update(chatsTable).set({ isStarred: newVal }).where(eq(chatsTable.id, chatId));
-    await loadChats();
-    API.patch(`/chats/toggle-chat-star/${chatId}`).catch((e) =>
-      console.warn('[star] API error:', e)
-    );
-  }, [chats]);
+    await bulkSetStarred([chatId], !current.isStarred);
+  }, [chats, bulkSetStarred]);
 
   // ── Bulk actions ───────────────────────────────────────────────────────────
-  const bulkStar = async () => {
-    for (const id of selectedIds) await toggleStar(id);
-    clearSelection();
+  const bulkStar = () => {
+    bulkSetStarred(Array.from(selectedIds), true);
   };
 
-  const bulkPin = async () => {
-    for (const id of selectedIds) await togglePin(id);
-    clearSelection();
+  const bulkPin = () => {
+    bulkSetPinned(Array.from(selectedIds), true);
   };
+
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
 
   const bulkMute = () => {
     Alert.alert('Mute', `Mute ${selectedIds.size} chats? (feature coming soon)`, [
@@ -419,6 +660,7 @@ export default function InboxScreen() {
       onDismissRequest={() => setOpenDropdown(null)}
       onRequestOpen={() => setOpenDropdown(filter.label)}
       style={flex1 ? { flex: 1, height: 38 } : { width: 140, height: 38 }}
+
       trigger={
         <View style={{
           flexDirection: 'row',
@@ -426,38 +668,41 @@ export default function InboxScreen() {
           justifyContent: 'space-between',
           paddingHorizontal: 12,
           borderRadius: 8,
-          backgroundColor: '#eff4ff',
+          backgroundColor: colors.surfaceContainerLow,
           borderWidth: 1,
-          borderColor: 'rgba(0,50,107,0.15)',
+          borderColor: colors.divider,
           height: '100%',
           width: '100%',
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <Icon name={filter.icon as any} size={16} color="#00326b" />
-            <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '600', color: '#00326b', flex: 1 }}>
+            <Icon name={filter.icon as any} size={16} color={colors.primary} />
+            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600', color: colors.primary, flex: 1 }}>
               {filter.selectedValue === 'All' ? filter.label : filter.options.find((o: any) => o.value === filter.selectedValue)?.label || filter.selectedValue}
             </Text>
           </View>
-          <Icon name="expand-more" size={18} color="#00326b" style={{ marginLeft: 4 }} />
+          <Icon name="expand-more" size={18} color={colors.primary} style={{ marginLeft: 4 }} />
         </View>
       }
       actions={filter.options.map((opt: any) => ({
         label: opt.label,
         onClick: () => filter.onSelect(opt.value),
+        channel: opt.channel,
+        phoneNumber: opt.phoneNumber,
+        icon: opt.icon,
       }))}
     />
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <View style={{ flex: 1, backgroundColor: '#f8f9ff' }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
 
       {/* Search & Tab Filters */}
       <View style={{
         paddingHorizontal: 16, paddingTop: 8,
-        paddingBottom: 8, backgroundColor: '#ffffff',
-        borderBottomWidth: 1, borderBottomColor: 'rgba(0,50,107,0.08)',
-        shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+        paddingBottom: 8, backgroundColor: colors.surfaceContainerLowest,
+        borderBottomWidth: 1, borderBottomColor: colors.divider,
+        shadowColor: '#000', shadowOpacity: isDark ? 0.2 : 0.04, shadowRadius: 4, elevation: 2,
       }}>
         {/* Top Dropdowns */}
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
@@ -465,19 +710,19 @@ export default function InboxScreen() {
         </View>
 
         {/* Search */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff4ff', borderRadius: 12, paddingHorizontal: 12, marginBottom: 10, height: 42 }}>
-          <Icon name="search" size={20} color="#737782" />
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceContainerLow, borderRadius: 12, paddingHorizontal: 12, marginBottom: 10, height: 44 }}>
+          <Icon name="search" size={20} color={colors.outline} />
           <TextInput
-            style={{ flex: 1, marginLeft: 8, fontSize: 14, color: '#1a1a2e' }}
+            style={{ flex: 1, marginLeft: 8, fontSize: 15, color: colors.onSurface }}
             placeholder="Search chats…"
-            placeholderTextColor="#9aa0a6"
+            placeholderTextColor={colors.outline}
             value={searchText}
             onChangeText={setSearchText}
             clearButtonMode="while-editing"
           />
           {searchText.length > 0 && (
             <Pressable onPress={() => setSearchText('')}>
-              <Icon name="cancel" size={18} color="#9aa0a6" />
+              <Icon name="cancel" size={18} color={colors.outline} />
             </Pressable>
           )}
         </View>
@@ -486,21 +731,23 @@ export default function InboxScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
           {TAB_FILTERS.map((tab) => {
             const active = activeFilter === tab;
+            const displayLabel = tab === 'Unread' ? `Unread (${totalUnreadChats})` : tab;
             return (
-              <Pressable
+              <HapticPressable
+                hapticType="heavy"
                 key={tab}
                 onPress={() => setActiveFilter(tab)}
                 style={{
-                  paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-                  backgroundColor: active ? '#00326b' : '#eff4ff',
+                  paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+                  backgroundColor: active ? colors.primary : colors.surfaceContainerLow,
                   borderWidth: active ? 0 : 1,
-                  borderColor: 'rgba(0,50,107,0.15)',
+                  borderColor: colors.divider,
                 }}
               >
-                <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#ffffff' : '#00326b' }}>
-                  {tab}
+                <Text style={{ fontSize: 14, fontWeight: '600', color: active ? colors.onPrimary : colors.primary }}>
+                  {displayLabel}
                 </Text>
-              </Pressable>
+              </HapticPressable>
             );
           })}
         </ScrollView>
@@ -544,6 +791,7 @@ export default function InboxScreen() {
             showsVerticalScrollIndicator={false}
             onRefresh={onRefresh}
             refreshing={isRefreshing}
+
             ListFooterComponent={
               isSyncing && chats.length > 0 ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
@@ -560,8 +808,19 @@ export default function InboxScreen() {
                 selected={selectedIds.has(chat.id)}
                 selecting={selecting}
                 onPress={() => {
-                  if (selecting) { toggleSelect(chat.id); }
-                  else { router.push(`/chat/${chat.id}` as any); }
+                  if (selecting) {
+                    toggleSelect(chat.id);
+                  } else {
+                    router.push({
+                      pathname: `/chat/${chat.id}`,
+                      params: {
+                        name: chat.name,
+                        avatar: chat.avatar || '',
+                        channel: chat.channel || '',
+                        accountId: chat.accountId || '',
+                      },
+                    } as any);
+                  }
                 }}
                 onLongPress={() => toggleSelect(chat.id)}
               />
@@ -581,6 +840,46 @@ export default function InboxScreen() {
         }}>
           {fabExpanded && (
             <View style={{ alignItems: 'flex-end', marginBottom: 14, gap: 10 }}>
+              {/* Option: Sync Filters */}
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{
+                  backgroundColor: 'rgba(0, 50, 107, 0.9)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 6,
+                  marginRight: 10,
+                }}>
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Sync Filters</Text>
+                </View>
+                <Pressable
+                  onPress={async () => {
+                    setFabExpanded(false);
+                    try {
+                      Alert.alert("Syncing", "Refetching filter options and template libraries...");
+                      await useSyncStore.getState().fetchAndCacheFilterOptions();
+                      Alert.alert("Success", "Filters and templates synced successfully!");
+                    } catch (e) {
+                      Alert.alert("Error", "Failed to sync filters.");
+                    }
+                  }}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 21,
+                    backgroundColor: '#dde3f9',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    elevation: 4,
+                    shadowColor: '#000',
+                    shadowOpacity: 0.15,
+                    shadowRadius: 4,
+                    shadowOffset: { width: 0, height: 2 },
+                  }}
+                >
+                  <Icon name="sync" size={20} color="#00326b" />
+                </Pressable>
+              </View>
+
               {/* Option: Add Contact */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{

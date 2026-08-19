@@ -1,12 +1,14 @@
-import { View, TextInput, Pressable, Platform, ScrollView, Keyboard } from "react-native";
+import { View, TextInput, Pressable, Platform, ScrollView, Keyboard, Image } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "../components/ui/Text";
 import { Icon } from "../components/ui/Icon";
 import { LoadingSpinner } from "../components/ui/Loading";
 import { useForm, Controller } from "react-hook-form";
 import { useSyncStore } from "../store/syncStore";
+import { useThemeStore } from "../store/themeStore";
 import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { IMAGE_PATHS } from "../constants/imagePaths";
 
 type LoginForm = {
   email: string;
@@ -16,6 +18,8 @@ type LoginForm = {
 export default function LoginScreen() {
   const router = useRouter();
   const login = useSyncStore((state) => state.login);
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
   const insets = useSafeAreaInsets();
   const [showPassword, setShowPassword] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -54,7 +58,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <View className="flex-1 bg-surface">
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <ScrollView 
         contentContainerStyle={{
           flexGrow: 1,
@@ -67,20 +71,38 @@ export default function LoginScreen() {
       >
         {/* Branding header logo */}
         <View className="items-center mb-10">
-          <View className="w-16 h-16 bg-primary rounded-2xl items-center justify-center mb-4 shadow-md">
-            <Icon name="rocket-launch" size={32} color="#ffffff" />
+          <View 
+            style={{ 
+              backgroundColor: isDark ? "#172435" : "#ffffff",
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }}
+            className="w-18 h-18 rounded-2xl items-center justify-center mb-4 shadow-md overflow-hidden p-2"
+          >
+            <Image 
+              source={IMAGE_PATHS.app_logo} 
+              style={{ width: 56, height: 56, borderRadius: 10 }} 
+              resizeMode="contain" 
+            />
           </View>
-          <Text className="text-3xl font-black text-on-surface tracking-tight">SAC Crm</Text>
-          <Text className="text-on-surface-variant font-body-md mt-1">Enterprise Sales & Communication Sync</Text>
+          <Text style={{ fontSize: 30, fontWeight: "900", color: colors.onSurface }} className="tracking-tight">SAC Crm</Text>
+          <Text style={{ color: colors.outline, fontSize: 14.5, marginTop: 4 }}>Enterprise Sales & Communication Sync</Text>
         </View>
 
         {/* Input Fields Card */}
-        <View className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 shadow-sm mb-6">
-          <Text className="text-xl font-bold text-on-surface mb-6">Log In</Text>
+        <View 
+          style={{ 
+            backgroundColor: colors.surfaceContainerLowest,
+            borderColor: colors.divider,
+            borderWidth: 1,
+          }}
+          className="rounded-2xl p-6 shadow-sm mb-6"
+        >
+          <Text style={{ fontSize: 20, fontWeight: "700", color: colors.onSurface, marginBottom: 20 }}>Log In</Text>
 
           {/* Email input field */}
           <View className="mb-4">
-            <Text className="font-label-lg text-on-surface-variant mb-2">Email Address</Text>
+            <Text style={{ fontSize: 13.5, color: colors.outline, marginBottom: 8, fontWeight: "600" }}>Email Address</Text>
             <Controller
               control={control}
               name="email"
@@ -94,12 +116,19 @@ export default function LoginScreen() {
               render={({ field: { onChange, onBlur, value } }) => (
                 <View className="relative justify-center">
                   <View className="absolute left-3 z-10">
-                    <Icon name="email" size={20} className="text-outline" />
+                    <Icon name="email" size={20} color={colors.outline} />
                   </View>
                   <TextInput
-                    className={`w-full bg-surface-container rounded-lg py-3.5 pl-10 pr-4 font-body-md text-on-surface border ${errors.email ? 'border-error' : 'border-outline-variant/20'}`}
+                    style={{
+                      backgroundColor: colors.surfaceContainerLow,
+                      borderColor: errors.email ? "#ef4444" : colors.divider,
+                      borderWidth: 1,
+                      color: colors.onSurface,
+                      fontSize: 15,
+                    }}
+                    className="w-full rounded-lg py-3.5 pl-10 pr-4 font-body-md"
                     placeholder="name@company.com"
-                    placeholderTextColor="#737782"
+                    placeholderTextColor={colors.outline}
                     onBlur={onBlur}
                     onChangeText={onChange}
                     value={value}
@@ -110,13 +139,13 @@ export default function LoginScreen() {
               )}
             />
             {errors.email && (
-              <Text className="text-error font-caption mt-1">{errors.email.message}</Text>
+              <Text className="text-red-500 text-xs mt-1">{errors.email.message}</Text>
             )}
           </View>
 
           {/* Password input field */}
           <View className="mb-6">
-            <Text className="font-label-lg text-on-surface-variant mb-2">Password</Text>
+            <Text style={{ fontSize: 13.5, color: colors.outline, marginBottom: 8, fontWeight: "600" }}>Password</Text>
             <Controller
               control={control}
               name="password"
@@ -130,12 +159,19 @@ export default function LoginScreen() {
               render={({ field: { onChange, onBlur, value } }) => (
                 <View className="relative justify-center">
                   <View className="absolute left-3 z-10">
-                    <Icon name="lock" size={20} className="text-outline" />
+                    <Icon name="lock" size={20} color={colors.outline} />
                   </View>
                   <TextInput
-                    className={`w-full bg-surface-container rounded-lg py-3.5 pl-10 pr-12 font-body-md text-on-surface border ${errors.password ? 'border-error' : 'border-outline-variant/20'}`}
+                    style={{
+                      backgroundColor: colors.surfaceContainerLow,
+                      borderColor: errors.password ? "#ef4444" : colors.divider,
+                      borderWidth: 1,
+                      color: colors.onSurface,
+                      fontSize: 15,
+                    }}
+                    className="w-full rounded-lg py-3.5 pl-10 pr-12 font-body-md"
                     placeholder="••••••••"
-                    placeholderTextColor="#737782"
+                    placeholderTextColor={colors.outline}
                     secureTextEntry={!showPassword}
                     onBlur={onBlur}
                     onChangeText={onChange}
@@ -149,14 +185,14 @@ export default function LoginScreen() {
                     <Icon 
                       name={showPassword ? "visibility-off" : "visibility"} 
                       size={20} 
-                      className="text-outline" 
+                      color={colors.outline} 
                     />
                   </Pressable>
                 </View>
               )}
             />
             {errors.password && (
-              <Text className="text-error font-caption mt-1">{errors.password.message}</Text>
+              <Text className="text-red-500 text-xs mt-1">{errors.password.message}</Text>
             )}
           </View>
 
@@ -164,12 +200,15 @@ export default function LoginScreen() {
           <Pressable 
             onPress={handleSubmit(onSubmit)}
             disabled={isLoading}
-            className="w-full bg-primary py-3.5 rounded-xl items-center justify-center shadow-sm active:opacity-90"
-            style={{ opacity: isLoading ? 0.8 : 1 }}
+            style={{ 
+              backgroundColor: colors.primary,
+              opacity: isLoading ? 0.8 : 1,
+            }}
+            className="w-full py-3.5 rounded-xl items-center justify-center shadow-sm active:opacity-90"
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {isLoading && <LoadingSpinner size={20} color="#ffffff" iconName="sync" />}
-              <Text className="text-on-primary font-bold font-body-lg">
+              {isLoading && <LoadingSpinner size={20} color={colors.onPrimary} iconName="sync" />}
+              <Text style={{ color: colors.onPrimary, fontWeight: "700", fontSize: 16 }}>
                 {isLoading ? "Signing in…" : "Log In"}
               </Text>
             </View>
@@ -177,7 +216,7 @@ export default function LoginScreen() {
         </View>
 
         {/* Footer info */}
-        <Text className="text-center font-caption text-on-surface-variant mt-4">
+        <Text style={{ color: colors.outline, fontSize: 12.5 }} className="text-center mt-4">
           Demo login. Enter any valid email and a 6+ char password.
         </Text>
       </ScrollView>

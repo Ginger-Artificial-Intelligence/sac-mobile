@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { View, TextInput, Pressable, Alert, Platform, ToastAndroid, Keyboard } from "react-native";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import { CustomEmojiPicker } from "./CustomEmojiPicker";
+import { useThemeStore } from "../../store/themeStore";
 
 export interface ChatInputProps {
   onSend: (text: string) => void;
@@ -14,11 +16,27 @@ export interface ChatInputProps {
     right: number;
   };
   keyboardHeight: number;
+  onPressTemplates: () => void;
 }
 
-export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInputProps) => {
+export const ChatInput = React.memo(({ onSend, insets, keyboardHeight, onPressTemplates }: ChatInputProps) => {
   const [text, setText] = useState("");
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [sheetContent, setSheetContent] = useState<'media' | 'emoji' | null>(null);
+  const inputRef = useRef<any>(null);
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
+  const isEmojiActive = sheetVisible && sheetContent === 'emoji';
+  const emojiIconName = isEmojiActive ? "keyboard" : "mood";
+
+  const handleEmojiIconPress = () => {
+    if (isEmojiActive) {
+      inputRef.current?.focus();
+    } else {
+      handleToggleEmojiSheet();
+    }
+  };
 
   const handleSend = () => {
     if (text.trim().length === 0) return;
@@ -60,24 +78,15 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
     setSheetVisible(false);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          "application/pdf",
-          "application/msword",
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "application/vnd.ms-excel",
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "application/vnd.ms-powerpoint",
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-          "text/plain"
-        ],
+        type: "*/*",
         copyToCacheDirectory: true,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
-        showToast(`Selected Document: ${file.name}`);
+        showToast(`Selected Doc: ${file.name}`);
       }
     } catch (e) {
-      console.warn("Picker error:", e);
+      console.warn("Doc Picker error:", e);
       showToast("Failed to pick document.");
     }
   };
@@ -94,20 +103,33 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
         showToast(`Selected Audio: ${file.name}`);
       }
     } catch (e) {
-      console.warn("Picker error:", e);
+      console.warn("Audio Picker error:", e);
       showToast("Failed to pick audio.");
     }
   };
 
-  const handleToggleSheet = () => {
-    if (!sheetVisible) {
+  const handleToggleMediaSheet = () => {
+    if (sheetVisible && sheetContent === 'media') {
+      setSheetVisible(false);
+    } else {
       Keyboard.dismiss();
+      setSheetContent('media');
+      setSheetVisible(true);
     }
-    setSheetVisible(!sheetVisible);
+  };
+
+  const handleToggleEmojiSheet = () => {
+    if (sheetVisible && sheetContent === 'emoji') {
+      setSheetVisible(false);
+    } else {
+      Keyboard.dismiss();
+      setSheetContent('emoji');
+      setSheetVisible(true);
+    }
   };
 
   const options = [
-    { label: "Templates", icon: "assignment", color: "#0ea5e9", onPress: () => { setSheetVisible(false); showToast("Templates selected"); } },
+    { label: "Templates", icon: "assignment", color: "#0ea5e9", onPress: () => { setSheetVisible(false); onPressTemplates(); } },
     { label: "Image/Video", icon: "photo-library", color: "#10b981", onPress: handlePickImageVideo },
     { label: "Documents", icon: "insert-drive-file", color: "#dc2626", onPress: handlePickDocument },
     { label: "Audio", icon: "audiotrack", color: "#eab308", onPress: handlePickAudio },
@@ -117,7 +139,14 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
   ];
 
   return (
-    <View className="bg-surface border-t border-outline-variant/30 flex-col shrink-0 z-20">
+    <View 
+      style={{
+        backgroundColor: isDark ? "#0b121c" : "#ffffff",
+        borderTopColor: colors.divider,
+        borderTopWidth: 1,
+      }}
+      className="flex-col shrink-0 z-20"
+    >
       {/* Backdrop overlay to dismiss sheet on tapping messages list */}
       {sheetVisible && (
         <Pressable
@@ -128,7 +157,7 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
             left: -50,
             right: -50,
             height: 2000,
-            backgroundColor: "rgba(0,0,0,0.15)",
+            backgroundColor: sheetContent === 'media' ? (isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.15)") : "transparent",
             zIndex: 1,
           }}
         />
@@ -137,49 +166,70 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
       {/* Chat Input Row */}
       <View
         className="px-2 py-2 flex-row items-end gap-2 z-10"
-        style={{ paddingBottom: sheetVisible || keyboardHeight > 0 ? 8 : Math.max(insets.bottom, 8) }}
+        style={{ paddingBottom: keyboardHeight > 0 ? 20 : (sheetVisible ? 8 : Math.max(insets.bottom, 8)) }}
       >
-        <View className="flex-1 bg-surface-container-lowest border border-outline-variant/50 rounded-[22px] flex-row items-center px-2 py-1 min-h-[44px]">
-          <Pressable className="p-2 rounded-full active:opacity-70">
-            <Icon name="mood" size={24} className="text-on-surface-variant" />
+        <View 
+          style={{
+            backgroundColor: colors.surfaceContainerLowest,
+            borderColor: colors.divider,
+            borderWidth: 1,
+          }}
+          className="flex-1 rounded-[22px] flex-row items-center px-2 py-1 min-h-[44px]"
+        >
+          <Pressable onPress={handleEmojiIconPress} className="p-2 rounded-full active:opacity-70">
+            <Icon name={emojiIconName} size={24} color={colors.outline} />
           </Pressable>
           <TextInput
-            className="flex-1 bg-transparent py-2 px-1 font-body-md text-on-surface"
+            ref={inputRef}
+            style={{ 
+              maxHeight: 120,
+              color: colors.onSurface,
+              fontSize: 15,
+            }}
+            className="flex-1 bg-transparent py-2 px-1 font-body-md"
             placeholder="Message"
-            placeholderTextColor="#737782"
+            placeholderTextColor={colors.outline}
             multiline
             value={text}
             onChangeText={setText}
             onFocus={() => setSheetVisible(false)}
-            style={{ maxHeight: 120 }}
           />
-          <Pressable onPress={handleToggleSheet} className="p-2 rounded-full active:opacity-70">
-            <Icon name="attach-file" size={24} className="text-on-surface-variant" />
+          <Pressable onPress={handleToggleMediaSheet} className="p-2 rounded-full active:opacity-70">
+            <Icon name="attach-file" size={24} color={colors.outline} />
           </Pressable>
           <Pressable className="p-2 rounded-full active:opacity-70">
-            <Icon name="photo-camera" size={24} className="text-on-surface-variant" />
+            <Icon name="photo-camera" size={24} color={colors.outline} />
           </Pressable>
         </View>
 
         <Pressable
           onPress={handleSend}
-          className="bg-primary-container w-11 h-11 rounded-full items-center justify-center shadow-md active:opacity-80"
+          style={{ backgroundColor: colors.primary }}
+          className="w-11 h-11 rounded-full items-center justify-center shadow-md active:opacity-80"
         >
           <Icon
             name={text.trim().length > 0 ? "send" : "mic"}
             size={24}
-            className="text-on-primary-container"
+            color={colors.onPrimary}
           />
         </Pressable>
       </View>
 
-      {/* Attachment Sheet (Inline below the input row) */}
-      {sheetVisible && (
+      {/* Attachment Media Sheet */}
+      {sheetVisible && sheetContent === 'media' && (
         <View 
-          className="bg-surface border-t border-outline-variant/20 p-5 pb-8 z-10"
-          style={{ paddingBottom: Math.max(insets.bottom, 24) }}
+          style={{ 
+            paddingBottom: Math.max(insets.bottom, 24),
+            backgroundColor: colors.surfaceContainerLowest,
+            borderTopColor: colors.divider,
+            borderTopWidth: 1,
+          }}
+          className="p-5 pb-8 z-10"
         >
-          <View className="w-12 h-1 bg-outline-variant/40 rounded-full self-center mb-5" />
+          <View 
+            style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.15)" }}
+            className="w-12 h-1 rounded-full self-center mb-5" 
+          />
 
           <View className="flex-row flex-wrap justify-start gap-y-4">
             {options.map((opt, idx) => (
@@ -195,7 +245,8 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
                   <Icon name={opt.icon as any} size={22} color="#fff" />
                 </View>
                 <Text 
-                  className="text-[11px] text-on-surface-variant text-center font-semibold mt-2 px-1"
+                  style={{ fontSize: 11, color: colors.outline, fontWeight: "600" }}
+                  className="text-center mt-2 px-1"
                   numberOfLines={2}
                 >
                   {opt.label}
@@ -204,6 +255,14 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight }: ChatInp
             ))}
           </View>
         </View>
+      )}
+
+      {/* Emoji Picker Sheet */}
+      {sheetVisible && sheetContent === 'emoji' && (
+        <CustomEmojiPicker
+          onSelect={(emoji) => setText(prev => prev + emoji)}
+          insetsBottom={insets.bottom}
+        />
       )}
     </View>
   );

@@ -17,6 +17,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from "../store/queryClient";
 import { initializeDatabase } from "../db/client";
 import { useSyncStore } from "../store/syncStore";
+import { useThemeStore } from "../store/themeStore";
+import { useColorScheme } from "nativewind";
 import { LoadingSpinner } from "../components/ui/Loading";
 import SocketManager from "../components/common/SocketManager";
 
@@ -62,6 +64,14 @@ export default function RootLayout() {
     }
   }, [isAuthenticated, segments[0], dbInitialized, loaded]);
 
+  const isDark = useThemeStore((state) => state.isDark);
+  const themeMode = useThemeStore((state) => state.themeMode);
+  const { setColorScheme } = useColorScheme();
+
+  useEffect(() => {
+    setColorScheme(isDark ? 'dark' : 'light');
+  }, [isDark, setColorScheme]);
+
   useEffect(() => {
     if ((loaded || error) && dbInitialized) {
       SplashScreen.hideAsync();
@@ -70,15 +80,15 @@ export default function RootLayout() {
 
   if ((!loaded && !error) || !dbInitialized) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#eff4ff', alignItems: 'center', justifyContent: 'center' }}>
-        <LoadingSpinner size={48} color="#00326b" iconName="sync" />
+      <View style={{ flex: 1, backgroundColor: isDark ? '#0d1520' : '#00326b', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+        <LoadingSpinner size={48} color={isDark ? '#abc7ff' : '#ffffff'} iconName="sync" />
       </View>
     );
   }
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
+      <StatusBar style={isDark ? "light" : "dark"} />
       <QueryClientProvider client={queryClient}>
         <SocketManager />
         <Stack screenOptions={{ headerShown: false }}>

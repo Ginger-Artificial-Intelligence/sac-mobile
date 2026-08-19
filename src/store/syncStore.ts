@@ -24,8 +24,12 @@ export interface Chat {
   assignedToName: string | null;
   leadStage: string | null;
   socialAccountId: string | null;
+  departmentId: string | null;
+  quickAssistKeyword: string | null;
+  campaignId: string | null;
   updatedAt: string;
   isCampaignChat: boolean;
+  rawJson: string | null;
 }
 
 export interface Message {
@@ -136,6 +140,18 @@ function mapApiChat(c: any): Chat {
     clean(c.metadata?.phoneNumberId) ||
     null;
 
+  // Extract Department ID
+  const deps = c.departments || c.chat?.departments || c.department || [];
+  const firstDep = Array.isArray(deps) ? deps[0] : deps;
+  const resolvedDeptId = firstDep ? String(firstDep._id || firstDep.id || firstDep) : null;
+
+  // Extract Quick Assist Keyword
+  const qaKeyword = c.latestQuickAssistKeyword || c.chat?.latestQuickAssistKeyword || c.quickAssistKeyword || null;
+
+  // Extract Campaign ID
+  const camp = c.campaignId || c.chat?.campaignId || c.campaign || c.chat?.campaign || null;
+  const resolvedCampId = camp ? (typeof camp === 'object' ? String(camp._id || camp.id || '') : String(camp)) : null;
+
   return {
     id,
     name: rawName,
@@ -150,11 +166,15 @@ function mapApiChat(c: any): Chat {
     assignedToName: c.assignedTo?.name || null,
     leadStage: c.leadInfo?.status || c.leadStage || null,
     socialAccountId: resolvedSocialAccountId,
+    departmentId: resolvedDeptId,
+    quickAssistKeyword: qaKeyword ? String(qaKeyword) : null,
+    campaignId: resolvedCampId,
     updatedAt: typeof ts === 'number' ? new Date(ts).toISOString() : String(ts),
     isBlocked: Boolean(c.isBlocked),
     username: c.username || null,
     isCampaignChat: Boolean(c.isCampaignChat),
     accountId: resolvedSocialAccountId,
+    rawJson: c ? JSON.stringify(c) : null,
   };
 }
 
@@ -204,11 +224,15 @@ async function upsertChat(chat: Chat) {
         assignedToName: chat.assignedToName,
         leadStage: chat.leadStage,
         socialAccountId: chat.socialAccountId,
+        departmentId: chat.departmentId,
+        quickAssistKeyword: chat.quickAssistKeyword,
+        campaignId: chat.campaignId,
         updatedAt: chat.updatedAt,
         accountId: chat.accountId,
         username: chat.username,
         isBlocked: chat.isBlocked,
         isCampaignChat: chat.isCampaignChat,
+        rawJson: chat.rawJson,
       },
     });
 }
@@ -245,8 +269,15 @@ interface SyncState {
   isAuthenticated: boolean;
   userEmail: string | null;
   userToken: string | null;
-  selectedChatIds: Set<string>;
   tenantId: string | null;
+  selectedChatIds: Set<string>;
+
+  // User Profile
+  userId: string | null;
+  userName: string | null;
+  userRole: string | null;
+
+  updateMessageStatus: (chatId: string, messageId: string, status: string) => Promise<void>;
 
   // local DB reads
   loadChats: () => Promise<void>;
@@ -257,13 +288,16 @@ interface SyncState {
   addLocalMessage: (chatId: string, text: string) => Promise<void>;
   addLocalContact: (contact: Omit<Contact, 'id'>) => Promise<void>;
 
-  // selection actions
+  // selection & bulk actions
   setSelectedChatIds: (ids: Set<string>) => void;
   clearSelection: () => void;
+  bulkSetStarred: (chatIds: string[], isStarred: boolean) => Promise<void>;
+  bulkSetPinned: (chatIds: string[], pinned: boolean) => Promise<void>;
 
   // backend sync (called after login and periodically)
   syncData: (apiChats: Chat[], apiContacts: Contact[]) => Promise<void>;
   syncWithBackend: () => Promise<void>;
+  fetchCurrentUser: () => Promise<void>;
 
   // auth
   login: (email: string, password?: string) => Promise<void>;
@@ -272,6 +306,12 @@ interface SyncState {
   // realtime socket events
   handleRealtimeMessage: (incoming: any) => Promise<void>;
   handleRealtimeStatus: (incoming: any) => Promise<void>;
+
+  // reset unread count
+  resetUnreadCount: (chatId: string) => Promise<void>;
+
+  // filter caching
+  fetchAndCacheFilterOptions: () => Promise<void>;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -289,8 +329,102 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   tenantId: storage.getString(mmkvKeys.TENANT_ID) || null,
   selectedChatIds: new Set(),
 
+  userId: storage.getString(mmkvKeys.USER_ID) || null,
+  userName: storage.getString(mmkvKeys.USER_NAME) || null,
+  userRole: storage.getString(mmkvKeys.USER_ROLE) || null,
+
   setSelectedChatIds: (ids: Set<string>) => set({ selectedChatIds: ids }),
   clearSelection: () => set({ selectedChatIds: new Set() }),
+
+  bulkSetStarred: async (chatIds: string[], isStarred: boolean) => {
+    if (chatIds.length === 0) return;
+    const idSet = new Set(chatIds);
+    // 1. Optimistic state update
+    set((state) => ({
+      chats: state.chats.map((c) => (idSet.has(c.id) ? { ...c, isStarred } : c)),
+      selectedChatIds: new Set(),
+    }));
+
+    // 2. Single atomic SQLite batch transaction
+    try {
+      const { expoDb } = require('../db/client');
+      await expoDb.withTransactionAsync(async () => {
+        for (const id of chatIds) {
+          await db.update(chatsTable).set({ isStarred }).where(eq(chatsTable.id, id));
+        }
+      });
+    } catch (e) {
+      console.error('[bulkStar] db error:', e);
+    }
+
+    // 3. Parallel background API calls
+    Promise.allSettled(
+      chatIds.map((id) => API.patch(`/chats/toggle-chat-star/${id}`))
+    ).catch(() => {});
+  },
+
+  bulkSetPinned: async (chatIds: string[], pinned: boolean) => {
+    if (chatIds.length === 0) return;
+    const idSet = new Set(chatIds);
+    // 1. Optimistic state update with re-sort
+    set((state) => {
+      const next = state.chats.map((c) => (idSet.has(c.id) ? { ...c, pinned } : c));
+      next.sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+      return { chats: next, selectedChatIds: new Set() };
+    });
+
+    // 2. Single atomic SQLite batch transaction
+    try {
+      const { expoDb } = require('../db/client');
+      await expoDb.withTransactionAsync(async () => {
+        for (const id of chatIds) {
+          await db.update(chatsTable).set({ pinned }).where(eq(chatsTable.id, id));
+        }
+      });
+    } catch (e) {
+      console.error('[bulkPin] db error:', e);
+    }
+
+    // 3. Parallel background API calls
+    Promise.allSettled(
+      chatIds.map((id) => API.patch(`/chats/toggle-chat-pin/${id}`))
+    ).catch(() => {});
+  },
+
+  fetchCurrentUser: async () => {
+    try {
+      const response = await API.get('/auth/me');
+      const userObj = response.data?.user || response.data?.data?.clientUser || response.data?.data?.user;
+      if (userObj) {
+        const userId = userObj._id || userObj.id || '';
+        const userName = response.data?.data?.clientName || userObj.username || userObj.name || '';
+        const userRole = response.data?.data?.rolename || response.data?.data?.roledashboard || userObj.role || '';
+
+        storage.set(mmkvKeys.USER_ID, userId);
+        storage.set(mmkvKeys.USER_NAME, userName);
+        storage.set(mmkvKeys.USER_ROLE, userRole);
+
+        set({ userId, userName, userRole });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch user profile:', err);
+    }
+  },
+
+  updateMessageStatus: async (chatId: string, messageId: string, status: string) => {
+    try {
+      await db.update(messagesTable)
+        .set({ status, readReceipt: status })
+        .where(eq(messagesTable.id, messageId));
+      await get().loadMessages(chatId);
+    } catch (err) {
+      console.error('Failed to update message status:', err);
+    }
+  },
 
 
   // ── Auth ───────────────────────────────────────────────────────────────────
@@ -309,11 +443,23 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     storage.set(mmkvKeys.USER_TOKEN, token);
     storage.set(mmkvKeys.TENANT_ID, actualTenantId);
 
+    const actualUser = user || {};
+    const userId = actualUser._id || actualUser.id || '';
+    const userName = response.data?.clientName || actualUser.username || actualUser.name || '';
+    const userRole = response.data?.rolename || response.data?.roledashboard || actualUser.role || '';
+
+    storage.set(mmkvKeys.USER_ID, userId);
+    storage.set(mmkvKeys.USER_NAME, userName);
+    storage.set(mmkvKeys.USER_ROLE, userRole);
+
     set({
       isAuthenticated: true,
       userEmail: email,
       userToken: token,
       tenantId: actualTenantId || null,
+      userId,
+      userName,
+      userRole,
     });
 
     // Start background sync immediately without blocking navigation
@@ -322,19 +468,23 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   logout: async () => {
     const token = get().userToken || storage.getString(mmkvKeys.USER_TOKEN);
-    try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+    if (token) {
+      try {
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${token}`
+        };
+        await API.post('/auth/logout', {}, { headers });
+      } catch (err) {
+        console.warn('Logout API call failed (non-fatal):', err);
       }
-      await API.post('/auth/logout', {}, { headers });
-    } catch (err) {
-      console.warn('Logout API call failed (non-fatal):', err);
     }
     storage.remove(mmkvKeys.IS_AUTHENTICATED);
     storage.remove(mmkvKeys.USER_EMAIL);
     storage.remove(mmkvKeys.USER_TOKEN);
     storage.remove(mmkvKeys.TENANT_ID);
+    storage.remove(mmkvKeys.USER_ID);
+    storage.remove(mmkvKeys.USER_NAME);
+    storage.remove(mmkvKeys.USER_ROLE);
 
     // Purge local database contents on logout
     try {
@@ -351,6 +501,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       userEmail: null,
       userToken: null,
       tenantId: null,
+      userId: null,
+      userName: null,
+      userRole: null,
       chats: [],
       contacts: [],
       messagesByChat: {},
@@ -384,7 +537,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         .select()
         .from(messagesTable)
         .where(eq(messagesTable.chatId, chatId))
-        .orderBy(desc(messagesTable.timestamp));
+        .orderBy(desc(messagesTable.timestamp))
+        .limit(60);
 
       set((state) => ({
         messagesByChat: {
@@ -436,6 +590,93 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       console.error('Failed to persist message locally:', err);
       get().loadChats();
       get().loadMessages(chatId);
+      return;
+    }
+
+    // Emit standard Socket.io event for message sending
+    try {
+      const { getSocket } = require('../lib/socketConnection');
+      const socket = getSocket();
+
+      if (!socket || !socket.connected) {
+        console.warn('Socket not initialized or disconnected. Marking message as failed.');
+        await get().updateMessageStatus(chatId, messageId, 'failed');
+        return;
+      }
+
+      const chat = get().chats.find((c) => c.id === chatId);
+      const payload = {
+        type: 'text',
+        to: chat?.phoneNumber || '',
+        chatId: chat?.id || '',
+        channel: chat?.channel || 'whatsapp',
+        phone_number_id: chat?.accountId || '',
+        accountId: chat?.accountId || '',
+        user: {
+          clientUserID: get().userId || '',
+          clientId: get().userId || '',
+          name: get().userName || '',
+          username: get().userName || '',
+          role: get().userRole || '',
+          roleName: get().userRole || '',
+        },
+        message: {
+          replyMsgId: null,
+          text: {
+            body: text,
+          },
+        },
+      };
+
+      socket.emit("message:send", payload, async (res: any) => {
+        if (!res || !res.success) {
+          console.warn('Socket message sending failed:', res);
+          await get().updateMessageStatus(chatId, messageId, 'failed');
+        } else {
+          const backendMsg = res.data || {};
+          const backendId = String(backendMsg._id || backendMsg.id || messageId);
+          const backendStatus = backendMsg.status || 'sent';
+          const backendTime = backendMsg.createdAt || backendMsg.timestamp || new Date().toISOString();
+
+          try {
+            if (backendId !== messageId) {
+              // Delete optimistic pending entry
+              await db.delete(messagesTable).where(eq(messagesTable.id, messageId));
+              
+              // Insert confirmed message entry
+              const confirmedMsg: Message = {
+                ...newMessage,
+                id: backendId,
+                status: backendStatus,
+                readReceipt: backendStatus,
+                timestamp: new Date(backendTime).toISOString(),
+                rawJson: JSON.stringify(backendMsg),
+              };
+              await db.insert(messagesTable).values(confirmedMsg);
+
+              // Update Zustand
+              set((state) => {
+                const chatMsgs = state.messagesByChat[chatId] || [];
+                const filtered = chatMsgs.filter((m) => m.id !== messageId);
+                return {
+                  messagesByChat: {
+                    ...state.messagesByChat,
+                    [chatId]: [confirmedMsg, ...filtered],
+                  },
+                };
+              });
+            } else {
+              // Update existing status
+              await get().updateMessageStatus(chatId, messageId, backendStatus);
+            }
+          } catch (dbErr) {
+            console.error('Failed to update confirmed message in DB:', dbErr);
+          }
+        }
+      });
+    } catch (socketErr) {
+      console.error('Failed to emit message send socket event:', socketErr);
+      await get().updateMessageStatus(chatId, messageId, 'failed');
     }
   },
 
@@ -492,6 +733,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     let cancelled = false;
 
     try {
+      try {
+        await get().fetchCurrentUser();
+      } catch (e) {
+        console.warn('[sync] fetchCurrentUser failed:', e);
+      }
+
       // ── Phase 1: Paginated chat fetch ──────────────────────────────────────
       const allChats: Chat[] = [];
       const seenIds = new Set<string>();
@@ -590,6 +837,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         storage.set(mmkvKeys.LAST_SYNCED_AT, now);
         set({ isSyncing: false, syncProgress: null, lastSyncedAt: now });
         await get().loadChats();
+        await get().fetchAndCacheFilterOptions();
       }
     } catch (err) {
       console.error('[sync] syncWithBackend error:', err);
@@ -623,14 +871,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
       // 2. Map and update the corresponding chat's last message time & text
       const chatRes = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId)).limit(1);
+      let updatedChat: Chat | null = null;
       if (chatRes.length > 0) {
         const chat = chatRes[0];
-        const updatedChat: Chat = {
+        updatedChat = {
           ...chat,
           lastMessage: msg.text || chat.lastMessage,
           unreadCount: msg.isOutgoing ? chat.unreadCount : (chat.unreadCount + 1),
           updatedAt: msg.timestamp,
-          accountId:  chat.accountId,
+          accountId: chat.accountId,
         };
         await upsertChat(updatedChat);
       } else {
@@ -638,14 +887,49 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         try {
           const res = await API.get(`/chats/${chatId}`);
           if (res.data?.data) {
-            await upsertChat(mapApiChat(res.data.data));
+            updatedChat = mapApiChat(res.data.data);
+            await upsertChat(updatedChat);
           }
         } catch (_) {}
       }
 
-      // 3. Reload in memory
-      await get().loadChats();
-      await get().loadMessages(chatId);
+      // 3. Fast incremental in-memory update without full-table loadChats()
+      set((state) => {
+        let found = false;
+        let nextChats = state.chats.map((c) => {
+          if (c.id === chatId) {
+            found = true;
+            return {
+              ...c,
+              lastMessage: msg.text || c.lastMessage,
+              unreadCount: msg.isOutgoing ? c.unreadCount : (c.unreadCount + 1),
+              updatedAt: msg.timestamp,
+            };
+          }
+          return c;
+        });
+
+        if (!found && updatedChat) {
+          nextChats = [updatedChat, ...nextChats];
+        }
+
+        // Re-sort with pinned first
+        nextChats.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
+
+        const activeChatMsgs = state.messagesByChat[chatId];
+        const nextMsgs = activeChatMsgs
+          ? [msg, ...activeChatMsgs.filter((m) => m.id !== msg.id)]
+          : undefined;
+
+        return {
+          chats: nextChats,
+          ...(nextMsgs ? { messagesByChat: { ...state.messagesByChat, [chatId]: nextMsgs } } : {}),
+        };
+      });
 
       // Trigger background prefetching for any media attachment in realtime message
       if (msg.type !== 'text' && msg.type !== 'unsupported') {
@@ -672,12 +956,117 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         .set({ status, readReceipt: status })
         .where(eq(messagesTable.id, msgId));
 
-      // Reload in memory
+      // Fast incremental status update in memory
       if (chatId) {
-        await get().loadMessages(chatId);
+        set((state) => {
+          const activeMsgs = state.messagesByChat[chatId];
+          if (!activeMsgs) return state;
+          return {
+            messagesByChat: {
+              ...state.messagesByChat,
+              [chatId]: activeMsgs.map((m) =>
+                m.id === msgId ? { ...m, status, readReceipt: status } : m
+              ),
+            },
+          };
+        });
       }
     } catch (err) {
       console.error('[realtime] handleRealtimeStatus error:', err);
+    }
+  },
+
+  resetUnreadCount: async (chatId: string) => {
+    try {
+      await db.update(chatsTable)
+        .set({ unreadCount: 0 })
+        .where(eq(chatsTable.id, chatId));
+
+      set((state) => {
+        const nextChats = state.chats.map((c) => {
+          if (c.id === chatId) {
+            return { ...c, unreadCount: 0 };
+          }
+          return c;
+        });
+        return { chats: nextChats };
+      });
+    } catch (e) {
+      console.error('[unread] resetUnreadCount failed:', e);
+    }
+  },
+
+  fetchAndCacheFilterOptions: async () => {
+    try {
+      // 1. Social Accounts
+      try {
+        const accRes = await API.get('/social-accounts');
+        const accs = Array.isArray(accRes.data?.data) ? accRes.data.data 
+          : Array.isArray(accRes.data) ? accRes.data 
+          : [];
+        storage.set('cached_social_accounts', JSON.stringify(accs));
+      } catch (e) {
+        console.warn('Sync social accounts failed:', e);
+      }
+
+      // 2. Departments
+      try {
+        const depRes = await API.get('/department/all');
+        const deps = depRes.data?.departments || [];
+        storage.set('cached_departments', JSON.stringify(deps));
+      } catch (e) {
+        console.warn('Sync departments failed:', e);
+      }
+
+      // 3. Keywords
+      try {
+        const kwRes = await API.get('/keywords', { params: { page: 1, limit: 500 } });
+        const kws = kwRes.data?.data?.keywords || kwRes.data?.data?.list || [];
+        storage.set('cached_keywords', JSON.stringify(kws));
+      } catch (e) {
+        console.warn('Sync keywords failed:', e);
+      }
+
+      // 4. Campaigns
+      try {
+        const campRes = await API.get('/chats/campaigns');
+        const camps = campRes.data?.campaigns || [];
+        storage.set('cached_campaigns', JSON.stringify(camps));
+      } catch (e) {
+        console.warn('Sync campaigns failed:', e);
+      }
+
+      // 5. Templates for all unique phone number IDs
+      const chats = get().chats;
+      const cachedAccsStr = storage.getString('cached_social_accounts');
+      const cachedAccs = cachedAccsStr ? JSON.parse(cachedAccsStr) : [];
+      
+      const phoneIdsSet = new Set<string>();
+      chats.forEach(c => { if (c.accountId) phoneIdsSet.add(c.accountId); });
+      cachedAccs.forEach((acc: any) => {
+        const pId = acc.phoneNumberId || acc.phone_number_id || acc.accountId || acc.account_id;
+        if (pId) phoneIdsSet.add(pId);
+      });
+
+      const phoneIds = Array.from(phoneIdsSet);
+      for (const phoneId of phoneIds) {
+        try {
+          const tempRes = await API.get('/template', { params: { limit: 1000, phone_number_id: phoneId } });
+          const templates = tempRes.data?.templates?.data || tempRes.data?.data || (Array.isArray(tempRes.data) ? tempRes.data : []);
+          storage.set(`templates_${phoneId}`, JSON.stringify(templates));
+        } catch (e) {
+          console.warn(`Sync templates from /template for ${phoneId} failed, trying /template/library:`, e);
+          try {
+            const tempRes = await API.get('/template/library', { params: { phone_number_id: phoneId } });
+            const templates = tempRes.data?.templates?.data || [];
+            storage.set(`templates_${phoneId}`, JSON.stringify(templates));
+          } catch (libraryErr) {
+            console.warn(`Sync templates from /template/library for ${phoneId} failed:`, libraryErr);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[sync] fetchAndCacheFilterOptions error:', err);
     }
   },
 }));

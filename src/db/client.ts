@@ -15,7 +15,7 @@ export async function initializeDatabase() {
   try {
     await expoDb.execAsync('PRAGMA foreign_keys = ON;');
 
-    // ── Chats ────────────────────────────────────────────────────────────────
+    // ── 1. Chats ─────────────────────────────────────────────────────────────
     await expoDb.execAsync(`
       CREATE TABLE IF NOT EXISTS chats (
         id TEXT PRIMARY KEY NOT NULL,
@@ -31,11 +31,15 @@ export async function initializeDatabase() {
         assigned_to_name TEXT,
         lead_stage TEXT,
         social_account_id TEXT,
+        department_id TEXT,
+        quick_assist_keyword TEXT,
+        campaign_id TEXT,
         updated_at TEXT NOT NULL,
         accountId TEXT,
         username TEXT,
         is_blocked INTEGER DEFAULT 0 NOT NULL,
-        is_campaign_chat INTEGER DEFAULT 0 NOT NULL
+        is_campaign_chat INTEGER DEFAULT 0 NOT NULL,
+        raw_json TEXT
       );
     `);
 
@@ -48,10 +52,14 @@ export async function initializeDatabase() {
       { name: 'assigned_to_name', type: 'TEXT' },
       { name: 'lead_stage', type: 'TEXT' },
       { name: 'social_account_id', type: 'TEXT' },
+      { name: 'department_id', type: 'TEXT' },
+      { name: 'quick_assist_keyword', type: 'TEXT' },
+      { name: 'campaign_id', type: 'TEXT' },
       { name: 'accountId', type: 'TEXT' },
       { name: 'username', type: 'TEXT' },
       { name: 'is_blocked', type: 'INTEGER DEFAULT 0 NOT NULL' },
-      { name: 'is_campaign_chat', type: 'INTEGER DEFAULT 0 NOT NULL' }
+      { name: 'is_campaign_chat', type: 'INTEGER DEFAULT 0 NOT NULL' },
+      { name: 'raw_json', type: 'TEXT' }
     ];
     for (const col of chatCols) {
       try {
@@ -59,7 +67,7 @@ export async function initializeDatabase() {
       } catch (_) { /* column already exists */ }
     }
 
-    // ── Messages ─────────────────────────────────────────────────────────────
+    // ── 2. Messages ──────────────────────────────────────────────────────────
     await expoDb.execAsync(`
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY NOT NULL,
@@ -92,7 +100,7 @@ export async function initializeDatabase() {
       } catch (_) { /* column already exists */ }
     }
 
-    // ── Contacts ─────────────────────────────────────────────────────────────
+    // ── 3. Contacts ──────────────────────────────────────────────────────────
     await expoDb.execAsync(`
       CREATE TABLE IF NOT EXISTS contacts (
         id TEXT PRIMARY KEY NOT NULL,
@@ -106,14 +114,7 @@ export async function initializeDatabase() {
       );
     `);
 
-    // Clean up legacy mock records from previous sessions
-    await expoDb.execAsync(`
-      DELETE FROM chats WHERE id IN ('1', '2', '3', '4', '5', '6');
-      DELETE FROM contacts WHERE id IN ('1', '2', '3', '4', '5', '6');
-      DELETE FROM messages WHERE id IN ('m1', 'm2') OR chat_id IN ('1', '2', '3', '4', '5', '6');
-    `);
-
-    // ── Media Cache ──────────────────────────────────────────────────────────
+    // ── 4. Media Cache ───────────────────────────────────────────────────────
     await expoDb.execAsync(`
       CREATE TABLE IF NOT EXISTS media_cache (
         key TEXT PRIMARY KEY NOT NULL,
@@ -121,6 +122,29 @@ export async function initializeDatabase() {
         created_at INTEGER NOT NULL
       );
     `);
+
+    // Clean up legacy mock records from previous sessions
+    await expoDb.execAsync(`
+      DELETE FROM chats WHERE id IN ('1', '2', '3', '4', '5', '6');
+      DELETE FROM contacts WHERE id IN ('1', '2', '3', '4', '5', '6');
+      DELETE FROM messages WHERE id IN ('m1', 'm2') OR chat_id IN ('1', '2', '3', '4', '5', '6');
+    `);
+
+    // ── 5. Compound Indexes (Created after tables exist) ─────────────────────
+    try {
+      await expoDb.execAsync(`
+        CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages (chat_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats (updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_chats_pinned_updated ON chats (pinned, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_chats_filters ON chats (channel, is_starred, is_open, unread_count);
+        CREATE INDEX IF NOT EXISTS idx_chats_dept ON chats (department_id);
+        CREATE INDEX IF NOT EXISTS idx_chats_qa ON chats (quick_assist_keyword);
+        CREATE INDEX IF NOT EXISTS idx_chats_camp ON chats (campaign_id);
+        CREATE INDEX IF NOT EXISTS idx_contacts_name_phone ON contacts (name, phone);
+      `);
+    } catch (idxErr) {
+      console.warn('Index creation warning (non-fatal):', idxErr);
+    }
 
     // Prune cache records older than 15 days
     const fifteenDaysAgo = Date.now() - 15 * 24 * 60 * 60 * 1000;
@@ -173,17 +197,18 @@ export async function prefetchChatMedia(chatId: string) {
 
       const params = getMediaParams(msg, chatId);
       // Fetch in background and save to SQLite
-      globalMediaQueue.enqueue<string>(() => {
-        return API.get(`/chats/media/${mediaId}`, {
-          responseType: "blob",
-          params
-        }).then((res: any) => {
-          return new Promise<string>((resolve, reject) => {
+      globalMediaQueue.enqueue<string>(async () => {
+        try {
+          const res = await API.get(`/chats/media/${mediaId}`, {
+            responseType: "blob",
+            params
+          });
+          return await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onerror = () => reject(new Error("Blob read fail"));
             reader.onloadend = () => {
               let dataUrl = reader.result as string;
-              if (dataUrl.startsWith("data:application/octet-stream;")) {
+              if (dataUrl && dataUrl.startsWith("data:application/octet-stream;")) {
                 if (msg.type === "image") {
                   dataUrl = dataUrl.replace("data:application/octet-stream;", "data:image/jpeg;");
                 } else if (msg.type === "video") {
@@ -192,16 +217,18 @@ export async function prefetchChatMedia(chatId: string) {
                   dataUrl = dataUrl.replace("data:application/octet-stream;", "data:audio/mpeg;");
                 }
               }
-              resolve(dataUrl);
+              resolve(dataUrl || "");
             };
             reader.readAsDataURL(res.data);
           });
-        });
+        } catch (_) {
+          return "";
+        }
       }).then(async (dataUrl) => {
-        await setMediaCache(cacheKey, dataUrl);
-      }).catch(() => {
-        // Silently fail so user can download on demand later
-      });
+        if (dataUrl) {
+          await setMediaCache(cacheKey, dataUrl);
+        }
+      }).catch(() => {});
     }
   } catch (err) {
     console.warn('[prefetch] prefetchChatMedia failed:', err);
@@ -226,7 +253,6 @@ function uint8ToBase64(uint8: Uint8Array): string {
 }
 
 export function getMediaParams(message: any, chatId?: string, phoneNumberId?: string): Record<string, string> {
-  console.log({ chatId, phoneNumberId })
   let raw: any = {};
   const jsonStr = message?.rawJson || message?.raw_json || '';
   if (jsonStr) {

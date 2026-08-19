@@ -93,7 +93,7 @@ export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMedi
         return;
       }
 
-      console.log(`📥 [useMessageMedia] Fetching mediaId: ${mediaId}, params:`, params);
+      // console.log(`📥 [useMessageMedia] Fetching mediaId: ${mediaId}, params:`, params);
       if (!params.phone_number_id) {
         console.warn("⚠️ [useMessageMedia] Aborting fetch - phone_number_id is missing");
         if (!cancelled) setState({ url: directUrl || "", loading: false, error: !directUrl });
@@ -103,14 +103,15 @@ export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMedi
       if (!cancelled) setState({ url: directUrl || "", loading: true, error: false });
       const existing = mediaInFlight.get(cacheKey);
 
-      const request = existing || globalMediaQueue.enqueue<string>(() => {
-        return API.get(`/chats/media/${mediaId}`, { responseType: "blob", params }).then((res: any) => {
-          return new Promise<string>((resolve, reject) => {
+      const request = existing || globalMediaQueue.enqueue<string>(async () => {
+        try {
+          const res = await API.get(`/chats/media/${mediaId}`, { responseType: "blob", params });
+          return await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onerror = () => reject(new Error("Blob read fail"));
             reader.onloadend = () => {
               let dataUrl = reader.result as string;
-              if (dataUrl.startsWith("data:application/octet-stream;")) {
+              if (dataUrl && dataUrl.startsWith("data:application/octet-stream;")) {
                 if (messageType === "image") {
                   dataUrl = dataUrl.replace("data:application/octet-stream;", "data:image/jpeg;");
                 } else if (messageType === "video") {
@@ -119,21 +120,26 @@ export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMedi
                   dataUrl = dataUrl.replace("data:application/octet-stream;", "data:audio/mpeg;");
                 }
               }
-              resolve(dataUrl);
+              resolve(dataUrl || "");
             };
             reader.readAsDataURL(res.data);
           });
-        });
+        } catch (fetchErr) {
+          mediaFailureCounts.set(cacheKey, 3);
+          throw fetchErr;
+        }
       }).then(async (dataUrl) => {
-        // Save in-memory
-        mediaUrlCache.set(cacheKey, dataUrl);
-        // Save SQLite
-        try {
-          await setMediaCache(cacheKey, dataUrl);
-        } catch (_) { }
-
-        mediaFailureCounts.delete(cacheKey);
-        return dataUrl;
+        if (dataUrl) {
+          mediaUrlCache.set(cacheKey, dataUrl);
+          try {
+            await setMediaCache(cacheKey, dataUrl);
+          } catch (_) { }
+          mediaFailureCounts.delete(cacheKey);
+        }
+        return dataUrl || "";
+      }).catch(() => {
+        mediaFailureCounts.set(cacheKey, 3);
+        return "";
       });
 
       if (!existing) {
@@ -143,10 +149,16 @@ export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMedi
 
       request
         .then((url: string) => {
-          if (!cancelled) setState({ url, loading: false, error: false });
+          if (!cancelled) {
+            if (url) {
+              setState({ url, loading: false, error: false });
+            } else {
+              setState({ url: directUrl || "", loading: false, error: !directUrl });
+            }
+          }
         })
         .catch(() => {
-          mediaFailureCounts.set(cacheKey, (mediaFailureCounts.get(cacheKey) || 0) + 1);
+          mediaFailureCounts.set(cacheKey, 3);
           if (!cancelled) setState({ url: directUrl || "", loading: false, error: !directUrl });
         });
     };

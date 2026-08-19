@@ -41,7 +41,7 @@ API.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       const url = String(error.config?.url || '');
-      if (!url.endsWith('/login') && !url.endsWith('/send-otp')) {
+      if (!url.endsWith('/login') && !url.endsWith('/send-otp') && !url.endsWith('/logout')) {
         // Dynamic import to break require cycle dependency at boot time
         try {
           const { useSyncStore } = require('../store/syncStore');

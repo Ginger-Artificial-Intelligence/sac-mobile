@@ -1,4 +1,4 @@
-import { View, Pressable } from "react-native";
+import { View, Pressable, Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import PagerView from "react-native-pager-view";
 import { useRef, useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { Icon } from "../components/ui/Icon";
 import { Text } from "../components/ui/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeDropdown } from "../components/ui/NativeDropdown";
+import { useThemeStore } from "../store/themeStore";
 
 import DashboardScreen from "../screens/index";
 import ContactsScreen from "../screens/contacts";
@@ -22,6 +23,8 @@ export default function MainAppContainer() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const pagerRef = useRef<PagerView>(null);
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
   
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showInboxMenu, setShowInboxMenu] = useState(false);
@@ -53,7 +56,8 @@ export default function MainAppContainer() {
 
   const selectedIds = useSyncStore((state) => state.selectedChatIds);
   const clearSelection = useSyncStore((state) => state.clearSelection);
-  const chats = useSyncStore((state) => state.chats);
+  const bulkSetStarred = useSyncStore((state) => state.bulkSetStarred);
+  const bulkSetPinned = useSyncStore((state) => state.bulkSetPinned);
 
   // Configure TopAppBar based on current tab
   const getHeaderProps = () => {
@@ -68,65 +72,33 @@ export default function MainAppContainer() {
             rightAction: (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20, marginRight: 8 }}>
                 <Pressable
-                  onPress={async () => {
-                    const API = require("../config/axios").default;
-                    const loadChats = useSyncStore.getState().loadChats;
-                    const { db } = require('../db/client');
-                    const { chats: chatsTable } = require('../db/schema');
-                    const { eq } = require('drizzle-orm');
-                    for (const id of selectedIds) {
-                      const current = chats.find((c: any) => c.id === id);
-                      if (current) {
-                        const newVal = !current.isStarred;
-                        await db.update(chatsTable).set({ isStarred: newVal }).where(eq(chatsTable.id, id));
-                        API.patch(`/chats/toggle-chat-star/${id}`).catch(() => {});
-                      }
-                    }
-                    await loadChats();
-                    clearSelection();
-                  }}
+                  onPress={() => bulkSetStarred(Array.from(selectedIds), true)}
                   style={({ pressed }) => [
                     {
                       padding: 6,
                       borderRadius: 20,
                       opacity: pressed ? 0.6 : 1,
                       transform: [{ scale: pressed ? 0.90 : 1 }],
-                      backgroundColor: pressed ? 'rgba(0, 50, 107, 0.08)' : 'transparent',
+                      backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
                     }
                   ]}
                 >
-                  <Icon name="star-outline" size={26} className="text-on-surface-variant" />
+                  <Icon name="star-outline" size={26} color={colors.onSurfaceVariant} />
                 </Pressable>
 
                 <Pressable
-                  onPress={async () => {
-                    const API = require("../config/axios").default;
-                    const loadChats = useSyncStore.getState().loadChats;
-                    const { db } = require('../db/client');
-                    const { chats: chatsTable } = require('../db/schema');
-                    const { eq } = require('drizzle-orm');
-                    for (const id of selectedIds) {
-                      const current = chats.find((c: any) => c.id === id);
-                      if (current) {
-                        const newVal = !current.pinned;
-                        await db.update(chatsTable).set({ pinned: newVal }).where(eq(chatsTable.id, id));
-                        API.patch(`/chats/toggle-chat-pin/${id}`).catch(() => {});
-                      }
-                    }
-                    await loadChats();
-                    clearSelection();
-                  }}
+                  onPress={() => bulkSetPinned(Array.from(selectedIds), true)}
                   style={({ pressed }) => [
                     {
                       padding: 6,
                       borderRadius: 20,
                       opacity: pressed ? 0.6 : 1,
                       transform: [{ scale: pressed ? 0.90 : 1 }],
-                      backgroundColor: pressed ? 'rgba(0, 50, 107, 0.08)' : 'transparent',
+                      backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
                     }
                   ]}
                 >
-                  <Icon name="push-pin" size={26} className="text-on-surface-variant" />
+                  <Icon name="push-pin" size={26} color={colors.onSurfaceVariant} />
                 </Pressable>
 
                 <Pressable
@@ -143,18 +115,18 @@ export default function MainAppContainer() {
                       borderRadius: 20,
                       opacity: pressed ? 0.6 : 1,
                       transform: [{ scale: pressed ? 0.90 : 1 }],
-                      backgroundColor: pressed ? 'rgba(0, 50, 107, 0.08)' : 'transparent',
+                      backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
                     }
                   ]}
                 >
-                  <Icon name="notifications-off" size={26} className="text-on-surface-variant" />
+                  <Icon name="notifications-off" size={26} color={colors.onSurfaceVariant} />
                 </Pressable>
               </View>
             )
           };
         }
         return {
-          title: "SAC Crm",
+          title: "SAC CRM",
           hideMenu: true,
           largeTitle: true,
           rightAction: (
@@ -164,13 +136,26 @@ export default function MainAppContainer() {
               onRequestOpen={() => setShowInboxMenu(true)}
               style={{ width: 32, height: 32 }}
               trigger={
-                <View className="p-1 rounded-full active:bg-surface-variant/50 w-full h-full justify-center items-center">
-                  <Icon name="more-vert" size={24} className="text-on-surface-variant" />
+                <View className="p-1 rounded-full active:opacity-70 w-full h-full justify-center items-center">
+                  <Icon name="more-vert" size={24} color={colors.onSurfaceVariant} />
                 </View>
               }
               actions={[
                 { label: "New chat", onClick: () => {} },
                 { label: "Add contact", onClick: () => {} },
+                { 
+                  label: "Sync Filters", 
+                  icon: "sync",
+                  onClick: async () => {
+                    try {
+                      Alert.alert("Syncing", "Refetching filter options and template libraries...");
+                      await useSyncStore.getState().fetchAndCacheFilterOptions();
+                      Alert.alert("Success", "Filters and templates synced successfully!");
+                    } catch (e) {
+                      Alert.alert("Error", "Failed to sync filters.");
+                    }
+                  }
+                },
               ]}
             />
           )
@@ -187,7 +172,7 @@ export default function MainAppContainer() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <TopAppBar {...getHeaderProps()} />
 
       <PagerView

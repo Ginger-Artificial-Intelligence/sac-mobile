@@ -14,17 +14,20 @@ export const chats = sqliteTable('chats', {
   assignedToName: text('assigned_to_name'),
   leadStage: text('lead_stage'),
   socialAccountId: text('social_account_id'),
+  departmentId: text('department_id'),
+  quickAssistKeyword: text('quick_assist_keyword'),
+  campaignId: text('campaign_id'),
   updatedAt: text('updated_at').notNull(),
   accountId: text('accountId'),
   username: text('username'),
   isBlocked: integer('is_blocked', { mode: 'boolean' }).default(false).notNull(),
   isCampaignChat: integer('is_campaign_chat', { mode: 'boolean' }).default(false).notNull(),
+  rawJson: text('raw_json'),
 });
 
 export const messages = sqliteTable('messages', {
   id: text('id').primaryKey(),
   chatId: text('chat_id').references(() => chats.id, { onDelete: 'cascade' }).notNull(),
-  // content: the actual message body (maps to MessageItem.content)
   text: text('text').notNull(),
   sender: text('sender'),
   isOutgoing: integer('is_outgoing', { mode: 'boolean' }).default(false).notNull(),

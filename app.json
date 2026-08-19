@@ -4,19 +4,13 @@
     "slug": "sac-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/iconsac1.png",
     "scheme": "sacmobile",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
       "predictiveBackGestureEnabled": false,
       "package": "com.alidcoded.sacmobile"
     },
@@ -30,14 +24,21 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#00326b",
+          "image": "./assets/images/sac-splash-icon.png",
+          "imageWidth": 76,
+          "dark": {
+            "backgroundColor": "#0d1520",
+            "image": "./assets/images/sac-splash-icon.png",
+            "imageWidth": 76
+          }
         }
       ],
       "expo-sqlite",
       "expo-video",
-      "expo-audio"
+      "expo-audio",
+      "expo-image",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

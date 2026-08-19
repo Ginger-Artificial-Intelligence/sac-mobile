@@ -12,6 +12,7 @@ import API from "../config/axios";
 import { db } from "../db/client";
 import { contacts as contactsTable } from "../db/schema";
 import { like, or } from "drizzle-orm";
+import { useThemeStore } from "../store/themeStore";
 
 // ─── Channel filter pills ─────────────────────────────────────────────────────
 const CHANNEL_FILTERS = ["All", "whatsapp", "messenger", "instagram"] as const;
@@ -32,6 +33,8 @@ export default function ContactsScreen() {
   const loadContacts = useSyncStore((state) => state.loadContacts);
   const syncWithBackend = useSyncStore((state) => state.syncWithBackend);
   const isSyncing = useSyncStore((state) => state.isSyncing);
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -98,13 +101,31 @@ export default function ContactsScreen() {
     return () => clearTimeout(timer);
   }, [searchText, filteredContacts.length]);
 
-  // ── Pull-to-refresh ────────────────────────────────────────────────────────
-  const onRefresh = useCallback(async () => {
+  // ── Pull-to-refresh (max 5s UI spinner, background sync continues) ───────
+  const onRefresh = useCallback(() => {
     setIsRefreshing(true);
     setPage(1);
     setHasMore(true);
-    await syncWithBackend();
-    setIsRefreshing(false);
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      if (isMounted) setIsRefreshing(false);
+    }, 5000);
+
+    (async () => {
+      try {
+        await syncWithBackend();
+      } catch (err) {
+        console.warn("Background contacts sync error:", err);
+      } finally {
+        clearTimeout(timer);
+        if (isMounted) setIsRefreshing(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [syncWithBackend]);
 
   // ── Infinite scroll (load more from API) ──────────────────────────────────
@@ -144,37 +165,37 @@ export default function ContactsScreen() {
   }, [isFetchingMore, hasMore, page, searchText]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f8f9ff' }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
       {/* Header (Outside FlashList to prevent unmounting focus loss) */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: 'rgba(0,50,107,0.08)', marginBottom: 4 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: colors.surfaceContainerLowest, borderBottomWidth: 1, borderBottomColor: colors.divider, marginBottom: 4 }}>
         {/* Title row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <Text style={{ fontSize: 22, fontWeight: '700', color: '#00326b' }}>Contacts</Text>
+          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.primary }}>Contacts</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable style={{ backgroundColor: '#00326b', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-              <Icon name="add" size={16} color="#ffffff" />
-              <Text style={{ color: '#ffffff', fontWeight: '600', fontSize: 13 }}>Add</Text>
+            <Pressable style={{ backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Icon name="add" size={16} color={colors.onPrimary} />
+              <Text style={{ color: colors.onPrimary, fontWeight: '600', fontSize: 14 }}>Add</Text>
             </Pressable>
-            <Pressable style={{ backgroundColor: '#eff4ff', padding: 8, borderRadius: 10 }}>
-              <Icon name="upload" size={18} color="#00326b" />
+            <Pressable style={{ backgroundColor: colors.surfaceContainerLow, padding: 8, borderRadius: 10 }}>
+              <Icon name="upload" size={18} color={colors.primary} />
             </Pressable>
           </View>
         </View>
 
         {/* Search */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff4ff', borderRadius: 12, paddingHorizontal: 12, height: 42, marginBottom: 10 }}>
-          <Icon name="search" size={20} color="#737782" />
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceContainerLow, borderRadius: 12, paddingHorizontal: 12, height: 44, marginBottom: 10 }}>
+          <Icon name="search" size={20} color={colors.outline} />
           <TextInput
-            style={{ flex: 1, marginLeft: 8, fontSize: 14, color: '#1a1a2e' }}
+            style={{ flex: 1, marginLeft: 8, fontSize: 15, color: colors.onSurface }}
             placeholder="Search by name, phone, email…"
-            placeholderTextColor="#9aa0a6"
+            placeholderTextColor={colors.outline}
             value={searchText}
             onChangeText={setSearchText}
             clearButtonMode="while-editing"
           />
           {searchText.length > 0 && (
-            <Pressable onPress={() => setSearchText('')}>
-              <Icon name="cancel" size={18} color="#9aa0a6" />
+            <Pressable onPress={() => setSearchText("")}>
+              <Icon name="cancel" size={18} color={colors.outline} />
             </Pressable>
           )}
         </View>
@@ -188,12 +209,12 @@ export default function ContactsScreen() {
                 key={ch}
                 onPress={() => setChannelFilter(ch)}
                 style={{
-                  paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
-                  backgroundColor: active ? '#00326b' : '#eff4ff',
-                  borderWidth: active ? 0 : 1, borderColor: 'rgba(0,50,107,0.15)',
+                  paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+                  backgroundColor: active ? colors.primary : colors.surfaceContainerLow,
+                  borderWidth: active ? 0 : 1, borderColor: colors.divider,
                 }}
               >
-                <Text style={{ fontSize: 13, fontWeight: '600', color: active ? '#fff' : '#00326b', textTransform: 'capitalize' }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: active ? colors.onPrimary : colors.primary, textTransform: 'capitalize' }}>
                   {ch === 'All' ? 'All Channels' : ch}
                 </Text>
               </Pressable>
@@ -203,7 +224,7 @@ export default function ContactsScreen() {
 
         {/* Count badge */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
-          <Text style={{ fontSize: 13, color: '#737782' }}>
+          <Text style={{ fontSize: 13.5, color: colors.outline }}>
             {filteredContacts.length} contact{filteredContacts.length !== 1 ? 's' : ''}
           </Text>
           {searchText.trim().length > 0 && filteredContacts.length === 0 && (
@@ -213,24 +234,24 @@ export default function ContactsScreen() {
       </View>
 
       <FlashList
-          data={filteredContacts}
-          keyExtractor={(item) => item.id}
-          onRefresh={onRefresh}
-          refreshing={isRefreshing}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.4}
+        data={filteredContacts}
+        keyExtractor={(item) => item.id}
+        onRefresh={onRefresh}
+        refreshing={isRefreshing}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
         ListEmptyComponent={
           isSyncing || searchText.trim().length > 0 ? (
             <View style={{ alignItems: 'center', paddingTop: 60, gap: 14 }}>
               <LoadingSpinner size={36} iconName="sync" />
-              <Text style={{ fontSize: 14, color: '#737782' }}>
+              <Text style={{ fontSize: 15, color: '#737782' }}>
                 {searchText.trim() ? 'Searching…' : 'Loading contacts…'}
               </Text>
             </View>
           ) : (
             <View style={{ alignItems: 'center', paddingTop: 60, gap: 10 }}>
               <Icon name="people-outline" size={48} color="#d0d6f9" />
-              <Text style={{ fontSize: 15, color: '#9aa0a6' }}>No contacts found</Text>
+              <Text style={{ fontSize: 16, color: '#9aa0a6' }}>No contacts found</Text>
             </View>
           )
         }
@@ -249,17 +270,17 @@ export default function ContactsScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 {/* Left: avatar + info */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#dde3f9', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#00326b' }}>
+                  <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: isDark ? '#1e3048' : '#dde3f9', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Text style={{ fontSize: 19, fontWeight: '700', color: colors.primary }}>
                       {contact.name?.charAt(0)?.toUpperCase() ?? '?'}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <Text style={{ fontWeight: '700', fontSize: 15, color: '#1a1a2e' }}>{contact.name}</Text>
+                      <Text style={{ fontWeight: '700', fontSize: 16.5, color: colors.onSurface }}>{contact.name}</Text>
                       {contact.status && <Badge variant="secondary" label={contact.status} />}
                     </View>
-                    <Text style={{ fontSize: 12, color: '#737782', marginTop: 2 }}>
+                    <Text style={{ fontSize: 13.5, color: colors.outline, marginTop: 2 }}>
                       {contact.username || contact.phone || ''}
                     </Text>
                   </View>
@@ -268,32 +289,32 @@ export default function ContactsScreen() {
                 {/* Quick actions */}
                 <View style={{ flexDirection: 'row', gap: 2 }}>
                   <Pressable style={{ padding: 6, borderRadius: 8 }}>
-                    <Icon name="chat" size={20} color="#737782" />
+                    <Icon name="chat" size={20} color={colors.outline} />
                   </Pressable>
                   <Pressable style={{ padding: 6, borderRadius: 8 }}>
-                    <Icon name="edit" size={20} color="#737782" />
+                    <Icon name="edit" size={20} color={colors.outline} />
                   </Pressable>
                 </View>
               </View>
 
               {/* Details row */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#f0f2ff' }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.divider }}>
                 {contact.phone && (
                   <View style={{ width: '50%', paddingRight: 8, marginBottom: 6 }}>
-                    <Text style={{ fontSize: 11, color: '#9aa0a6', marginBottom: 2 }}>Phone</Text>
-                    <Text style={{ fontSize: 13, color: '#1a1a2e', fontWeight: '500' }}>{contact.phone}</Text>
+                    <Text style={{ fontSize: 12, color: colors.outline, marginBottom: 2 }}>Phone</Text>
+                    <Text style={{ fontSize: 14.5, color: colors.onSurface, fontWeight: '500' }}>{contact.phone}</Text>
                   </View>
                 )}
                 {contact.channel && (
                   <View style={{ width: '50%', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 11, color: '#9aa0a6', marginBottom: 2 }}>Channel</Text>
-                    <Text style={{ fontSize: 13, color: '#1a1a2e', fontWeight: '500', textTransform: 'capitalize' }}>{contact.channel}</Text>
+                    <Text style={{ fontSize: 12, color: colors.outline, marginBottom: 2 }}>Channel</Text>
+                    <Text style={{ fontSize: 14.5, color: colors.onSurface, fontWeight: '500', textTransform: 'capitalize' }}>{contact.channel}</Text>
                   </View>
                 )}
                 {contact.lastActivity && (
                   <View style={{ width: '100%' }}>
-                    <Text style={{ fontSize: 11, color: '#9aa0a6', marginBottom: 2 }}>Last Activity</Text>
-                    <Text style={{ fontSize: 12, color: '#737782' }}>
+                    <Text style={{ fontSize: 12, color: colors.outline, marginBottom: 2 }}>Last Activity</Text>
+                    <Text style={{ fontSize: 13.5, color: colors.outline }}>
                       {new Date(contact.lastActivity).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' })}
                     </Text>
                   </View>

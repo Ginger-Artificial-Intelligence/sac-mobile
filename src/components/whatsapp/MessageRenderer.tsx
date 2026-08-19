@@ -14,10 +14,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 
 import { useMessageMedia } from "../../hooks/useMessageMedia";
+import { useThemeStore } from "../../store/themeStore";
 
 const Bubble = React.memo(({ message, children, wide = false }: { message: NormalizedChatMessage; children: React.ReactNode; wide?: boolean }) => {
   const isMe = message.isOutgoing;
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
   const formattedTime = message.createdAt ? formatMessageTime(message.createdAt) : "";
+
   const getStatusIconName = () => {
     const raw = (message as any).status;
     if (raw === 4 || raw === "4") return "error-outline";
@@ -31,51 +35,125 @@ const Bubble = React.memo(({ message, children, wide = false }: { message: Norma
     if (s === "pending" || s === "sending") return "access-time";
     return "check";
   };
+
   const getStatusIconColor = () => {
     const raw = (message as any).status;
-    if (raw === 3 || raw === "3" || String(raw).toLowerCase() === "read") return "#00326b";
+    if (raw === 3 || raw === "3" || String(raw).toLowerCase() === "read") return isDark ? "#53bdeb" : "#00326b";
     if (raw === 4 || raw === "4" || String(raw).toLowerCase() === "failed") return "#e53935";
-    return "#737782";
+    return isMe ? (isDark ? "rgba(255,255,255,0.7)" : "#737782") : colors.outline;
   };
+
   return (
     <View className={cn("flex-row px-4 py-1", isMe ? "justify-end" : "justify-start")}>
-      <View className={cn("rounded-2xl px-3 py-2 border shadow-xs relative", wide ? "max-w-[87%]" : "max-w-[80%]", isMe ? "bg-[#d9fdd3] rounded-tr-sm border-[#c1e8ba]/40" : "bg-surface rounded-tl-sm border-outline-variant/20")}>
+      <View 
+        style={{
+          backgroundColor: isMe
+            ? (isDark ? "#005c4b" : "#d9fdd3")
+            : (isDark ? "#121d2b" : "#ffffff"),
+          borderColor: isMe
+            ? (isDark ? "rgba(0, 92, 75, 0.6)" : "rgba(193, 232, 186, 0.6)")
+            : (isDark ? colors.divider : "rgba(0, 50, 107, 0.08)"),
+          borderWidth: 1,
+        }}
+        className={cn(
+          "rounded-2xl px-3 py-2 shadow-xs relative", 
+          wide ? "max-w-[87%]" : "max-w-[80%]", 
+          isMe ? "rounded-tr-sm" : "rounded-tl-sm"
+        )}
+      >
         {children}
         <View className="flex-row justify-end items-center gap-1 mt-1">
-          {isMe && message.senderName && <Text className="text-[10px] text-on-surface-variant max-w-[100px]" numberOfLines={1}>{message.senderName} • </Text>}
-          <Text className="text-[10px] text-on-surface-variant">{formattedTime}</Text>
+          {isMe && message.senderName && (
+            <Text 
+              style={{ color: isDark ? "rgba(255,255,255,0.7)" : "#5f6368", fontSize: 10.5 }} 
+              className="max-w-[100px]" 
+              numberOfLines={1}
+            >
+              {message.senderName} • 
+            </Text>
+          )}
+          <Text 
+            style={{ color: isMe ? (isDark ? "rgba(255,255,255,0.7)" : "#5f6368") : colors.outline, fontSize: 10.5 }}
+          >
+            {formattedTime}
+          </Text>
           {isMe && <Icon name={getStatusIconName()} size={13} color={getStatusIconColor()} />}
         </View>
       </View>
     </View>
   );
 });
+
 const URL_RX = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/i;
 const PHONE_RX = /^\+?[0-9][0-9\s().\-]{6,}[0-9]$/;
-const RichText = React.memo(({ text, muted }: { text: unknown; muted?: boolean }) => {
+
+const RichText = React.memo(({ text, muted, isOutgoing }: { text: unknown; muted?: boolean; isOutgoing?: boolean }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
   const normalized = String(text ?? "").replace(/\\n/g, "\n");
   if (!normalized) return null;
-  const cls = muted ? "text-xs text-on-surface-variant leading-relaxed" : "text-sm text-on-surface leading-relaxed";
+
+  const defaultColor = isOutgoing
+    ? (isDark ? "#ffffff" : "#0b1c30")
+    : colors.onSurface;
+
+  const mutedColor = isOutgoing
+    ? (isDark ? "rgba(255,255,255,0.75)" : "#5f6368")
+    : colors.outline;
+
+  const linkColor = isOutgoing
+    ? (isDark ? "#7dd3fc" : "#00326b")
+    : colors.primary;
+
   const parts = normalized.split(/(\n|\s+)/g);
   const nodes = parts.map((part, i) => {
     if (!part) return null;
     if (/^\s+$/.test(part)) return part;
     if (part === "\n") return "\n";
     const m = part.match(/^(.+?)([.,!?;:)]*)$/);
-    const core = m?.[1] || part; const suf = m?.[2] || "";
+    const core = m?.[1] || part; 
+    const suf = m?.[2] || "";
     const bold = core.length > 2 && core.startsWith("*") && core.endsWith("*");
     const val = bold ? core.slice(1, -1) : core;
     const isUrl = URL_RX.test(val);
     const digits = val.replace(/\D/g, "");
     const isPhone = !isUrl && digits.length >= 8 && digits.length <= 15 && PHONE_RX.test(val);
-    if (isUrl) { const href = val.startsWith("http") ? val : "https://" + val; return <Text key={i} className="text-primary underline" onPress={() => Linking.openURL(href).catch(() => { })}>{bold ? <Text style={{ fontWeight: "700" }}>{val}</Text> : val}{suf}</Text>; }
-    if (isPhone) return <Text key={i} className="text-primary underline" onPress={() => Linking.openURL(`tel:${digits}`).catch(() => { })}>{val}{suf}</Text>;
-    return <Text key={i} style={bold ? { fontWeight: "700" } : undefined}>{val}{suf}</Text>;
+
+    if (isUrl) { 
+      const href = val.startsWith("http") ? val : "https://" + val; 
+      return (
+        <Text key={i} style={{ color: linkColor, textDecorationLine: "underline" }} onPress={() => Linking.openURL(href).catch(() => {})}>
+          {bold ? <Text style={{ fontWeight: "700", color: linkColor }}>{val}</Text> : val}{suf}
+        </Text>
+      ); 
+    }
+    if (isPhone) {
+      return (
+        <Text key={i} style={{ color: linkColor, textDecorationLine: "underline" }} onPress={() => Linking.openURL(`tel:${digits}`).catch(() => {})}>
+          {val}{suf}
+        </Text>
+      );
+    }
+    return <Text key={i} style={bold ? { fontWeight: "700", color: defaultColor } : { color: defaultColor }}>{val}{suf}</Text>;
   });
-  return <Text className={cls} selectable>{nodes}</Text>;
+
+  return (
+    <Text 
+      style={{ 
+        color: muted ? mutedColor : defaultColor, 
+        fontSize: muted ? 12.5 : 14.5,
+        lineHeight: muted ? 18 : 21,
+      }} 
+      selectable
+    >
+      {nodes}
+    </Text>
+  );
 });
 
 const ReplyPreview = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
   const replyTo = (message as any).reply_to;
   if (!replyTo) return null;
   const sender = replyTo.sender || replyTo.senderName || "";
@@ -83,21 +161,49 @@ const ReplyPreview = React.memo(({ message }: { message: NormalizedChatMessage }
   const content = replyTo.content ||
     (type === "image" ? "📷 Image" : type === "video" ? "🎥 Video" : type === "audio" ? "🎤 Audio" : type === "document" ? "📄 Document" : type === "location" ? "📍 Location" : type === "template" ? "📋 Template" : "");
   if (!sender && !content) return null;
+
   return (
-    <View className="mb-1.5 rounded-lg overflow-hidden border-l-[3px] border-primary bg-surface-container-lowest/60 px-2 py-1.5">
-      {sender ? <Text className="text-[10px] font-bold text-primary" numberOfLines={1}>{sender}</Text> : null}
-      {content ? <Text className="text-[10px] text-on-surface-variant" numberOfLines={2}>{content}</Text> : null}
+    <View 
+      style={{
+        backgroundColor: isDark ? "rgba(0, 0, 0, 0.3)" : "rgba(0, 50, 107, 0.05)",
+        borderLeftColor: colors.primary,
+        borderLeftWidth: 3,
+      }}
+      className="mb-1.5 rounded-lg overflow-hidden px-2 py-1.5"
+    >
+      {sender ? <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>{sender}</Text> : null}
+      {content ? <Text style={{ color: colors.outline, fontSize: 11 }} numberOfLines={2}>{content}</Text> : null}
     </View>
   );
 });
 
 const ActionChip = React.memo(({ label, href }: { label: string; href?: string }) => {
   const [pressed, setPressed] = useState(false);
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   return (
-    <Pressable onPress={() => href && Linking.openURL(href).catch(() => { })} onPressIn={() => setPressed(true)} onPressOut={() => { setTimeout(() => setPressed(false), 150); }}
-      style={{ marginTop: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: pressed ? "rgba(0,50,107,0.1)" : "rgba(255,255,255,0.85)", borderWidth: 1, borderColor: "rgba(0,50,107,0.15)", alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 4 }}>
-      {href && <Icon name="open-in-new" size={13} className="text-on-surface-variant" />}
-      <Text className="text-xs font-bold text-primary">{label}</Text>
+    <Pressable 
+      onPress={() => href && Linking.openURL(href).catch(() => {})} 
+      onPressIn={() => setPressed(true)} 
+      onPressOut={() => { setTimeout(() => setPressed(false), 150); }}
+      style={{ 
+        marginTop: 8, 
+        paddingVertical: 8, 
+        borderRadius: 12, 
+        backgroundColor: pressed 
+          ? (isDark ? "rgba(255,255,255,0.2)" : "rgba(0,50,107,0.1)") 
+          : (isDark ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.9)"), 
+        borderWidth: 1, 
+        borderColor: colors.divider, 
+        alignItems: "center", 
+        flexDirection: "row", 
+        justifyContent: "center", 
+        gap: 4 
+      }}
+    >
+      {href && <Icon name="open-in-new" size={13} color={colors.primary} />}
+      <Text style={{ fontSize: 12.5, fontWeight: "700", color: colors.primary }}>{label}</Text>
     </Pressable>
   );
 });
@@ -105,7 +211,7 @@ const ActionChip = React.memo(({ label, href }: { label: string; href?: string }
 const TextMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => (
   <Bubble message={message}>
     <ReplyPreview message={message} />
-    <RichText text={message.content || "[text message]"} />
+    <RichText text={message.content || "[text message]"} isOutgoing={message.isOutgoing} />
   </Bubble>
 ));
 
@@ -223,10 +329,10 @@ const FullscreenMediaModal = ({ visible, onClose, mediaUrl, type, message }: Ful
             </Pressable>
 
             <View className="flex-1 ml-1 justify-center">
-              <Text className="text-white font-semibold text-base" style={{ color: "#ffffff" }}>
+              <Text className="font-semibold text-base" style={{ color: "#ffffff" }}>
                 {message.isOutgoing ? "You" : (message.senderName || "Souken Labs")}
               </Text>
-              <Text className="text-white/70 text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
+              <Text className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
                 {formattedDate}
               </Text>
             </View>
@@ -258,7 +364,7 @@ const FullscreenMediaModal = ({ visible, onClose, mediaUrl, type, message }: Ful
           >
             {/* Caption Text (if any) */}
             {message.content ? (
-              <Text className="text-white text-sm px-4 pb-3" style={{ color: "#ffffff" }}>
+              <Text className="text-sm px-4 pb-3" style={{ color: "#ffffff" }}>
                 {message.content}
               </Text>
             ) : null}
@@ -277,6 +383,8 @@ const FullscreenMediaModal = ({ visible, onClose, mediaUrl, type, message }: Ful
 };
 
 const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
 
   const [retryTrigger, setRetryTrigger] = useState(0);
   const media = useMessageMedia({
@@ -302,16 +410,22 @@ const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }
     <>
       <Bubble message={message} wide>
         {media.loading ? (
-          <View className="w-[250px] h-[250px] rounded-xl bg-surface-container-lowest items-center justify-center gap-2">
-            <ActivityIndicator size="small" color="#00326b" />
-            <Text className="text-[11px] text-on-surface-variant">Loading image...</Text>
+          <View 
+            style={{ 
+              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLowest,
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }} 
+            className="w-[250px] h-[250px] rounded-xl items-center justify-center gap-2"
+          >
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={{ color: colors.outline, fontSize: 11 }}>Loading image...</Text>
           </View>
         ) : media.url && !failed ? (
           <Pressable onPress={() => setModal(true)} className="active:opacity-90">
             <Image
               source={{ uri: media.url }}
-              style={{ width: 250, aspectRatio, borderRadius: 12, maxHeight: 650, }}
-              className="bg-surface-container-lowest"
+              style={{ width: 250, aspectRatio, borderRadius: 12, maxHeight: 650 }}
               contentFit="contain"
               onLoad={(evt) => {
                 if (evt.source && evt.source.width && evt.source.height) {
@@ -322,12 +436,20 @@ const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }
             />
           </Pressable>
         ) : (
-          <Pressable onPress={() => setRetryTrigger(prev => prev + 1)} className="w-[250px] h-[250px] rounded-xl bg-surface-container-low border border-outline-variant/20 items-center justify-center active:opacity-90">
-            <Icon name="refresh" size={32} color="#00326b" />
-            <Text className="text-[11px] text-on-surface-variant font-semibold mt-2">Failed to load. Tap to retry</Text>
+          <Pressable 
+            onPress={() => setRetryTrigger(prev => prev + 1)} 
+            style={{ 
+              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLow,
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }} 
+            className="w-[250px] h-[250px] rounded-xl items-center justify-center active:opacity-90"
+          >
+            <Icon name="refresh" size={32} color={colors.primary} />
+            <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600" }} className="mt-2">Failed to load. Tap to retry</Text>
           </Pressable>
         )}
-        {message.content ? <RichText text={message.content} /> : null}
+        {message.content ? <RichText text={message.content} isOutgoing={message.isOutgoing} /> : null}
       </Bubble>
       {media.url && (
         <FullscreenMediaModal
@@ -343,6 +465,9 @@ const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }
 });
 
 const VideoMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const [retryTrigger, setRetryTrigger] = useState(0);
   const media = useMessageMedia({
     mediaId: message.mediaId,
@@ -364,26 +489,46 @@ const VideoMessage = React.memo(({ message }: { message: NormalizedChatMessage }
     <>
       <Bubble message={message} wide>
         {media.loading ? (
-          <View className="w-[250px] h-[250px] rounded-xl bg-surface-container-lowest items-center justify-center gap-2">
-            <ActivityIndicator size="small" color="#00326b" />
-            <Text className="text-[11px] text-on-surface-variant">Loading video...</Text>
+          <View 
+            style={{ 
+              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLowest,
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }} 
+            className="w-[250px] h-[250px] rounded-xl items-center justify-center gap-2"
+          >
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={{ color: colors.outline, fontSize: 11 }}>Loading video...</Text>
           </View>
         ) : media.url ? (
           <Pressable onPress={handlePress} className="active:opacity-90">
             <View className="w-[250px] h-[250px] rounded-xl bg-black overflow-hidden justify-center items-center">
-              <Image source={{ uri: media.url }} style={{ position: "absolute", width: "100%", height: "100%" }} contentFit="contain" />
+              <Image
+                source={{ uri: media.url }}
+                style={{ position: "absolute", width: "100%", height: "100%" }}
+                contentFit="contain"
+                onError={() => {}}
+              />
               <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.25)", alignItems: "center", justifyContent: "center" }}>
                 <View className="w-12 h-12 rounded-full bg-black/60 items-center justify-center"><Icon name="play-arrow" size={28} color="#fff" /></View>
               </View>
             </View>
           </Pressable>
         ) : (
-          <Pressable onPress={() => setRetryTrigger(prev => prev + 1)} className="w-[250px] h-[250px] rounded-xl bg-surface-container-low border border-outline-variant/20 items-center justify-center active:opacity-90">
-            <Icon name="refresh" size={32} color="#00326b" />
-            <Text className="text-[11px] text-on-surface-variant font-semibold mt-2">Failed to load. Tap to retry</Text>
+          <Pressable 
+            onPress={() => setRetryTrigger(prev => prev + 1)} 
+            style={{ 
+              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLow,
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }} 
+            className="w-[250px] h-[250px] rounded-xl items-center justify-center active:opacity-90"
+          >
+            <Icon name="refresh" size={32} color={colors.primary} />
+            <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600" }} className="mt-2">Failed to load. Tap to retry</Text>
           </Pressable>
         )}
-        {message.content ? <RichText text={message.content} /> : null}
+        {message.content ? <RichText text={message.content} isOutgoing={message.isOutgoing} /> : null}
       </Bubble>
       {media.url && (
         <FullscreenMediaModal
@@ -399,6 +544,9 @@ const VideoMessage = React.memo(({ message }: { message: NormalizedChatMessage }
 });
 
 const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const media = useMessageMedia({
     mediaId: message.mediaId,
     messageType: message.type,
@@ -409,62 +557,65 @@ const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMes
   const player = useAudioPlayer(media.url ? { uri: media.url } : null);
   const status = useAudioPlayerStatus(player);
   const fmt = (s: number) => { const t = Math.floor(s); return `${Math.floor(t / 60)}:${t % 60 < 10 ? "0" : ""}${t % 60}`; };
-  const dur = status.duration || 0; const cur = status.currentTime || 0; const pct = dur > 0 ? (cur / dur) * 100 : 0;
+  const dur = status.duration || 0; 
+  const cur = status.currentTime || 0; 
+  const pct = dur > 0 ? (cur / dur) * 100 : 0;
+
   return (
     <Bubble message={message} wide>
-      <View className="flex-row items-center gap-3 bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 min-w-[240px]">
-        <Pressable onPress={() => { if (media.loading) return; if (!media.url) { Alert.alert("Unavailable", "Audio not accessible."); return; } if (status.playing) player.pause(); else player.play(); }} disabled={media.loading || !media.url} className="w-10 h-10 rounded-full bg-primary-container items-center justify-center active:opacity-80">
-          {media.loading || status.isBuffering ? <ActivityIndicator size="small" color="#00326b" /> : <Icon name={status.playing ? "pause" : "play-arrow"} size={22} color="#00326b" />}
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.7)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="flex-row items-center gap-3 rounded-xl p-3 min-w-[240px]"
+      >
+        <Pressable 
+          onPress={() => { if (media.loading) return; if (!media.url) { Alert.alert("Unavailable", "Audio not accessible."); return; } if (status.playing) player.pause(); else player.play(); }} 
+          disabled={media.loading || !media.url} 
+          style={{ backgroundColor: colors.primary }}
+          className="w-10 h-10 rounded-full items-center justify-center active:opacity-80"
+        >
+          {media.loading || status.isBuffering ? (
+            <ActivityIndicator size="small" color={colors.onPrimary} />
+          ) : (
+            <Icon name={status.playing ? "pause" : "play-arrow"} size={22} color={colors.onPrimary} />
+          )}
         </Pressable>
         <View className="flex-1">
-          <View className="h-1 bg-outline-variant/40 rounded-full overflow-hidden"><View className="h-full bg-primary" style={{ width: `${pct}%` }} /></View>
-          <View className="flex-row justify-between mt-1"><Text className="text-[10px] text-on-surface-variant">{fmt(cur)}</Text><Text className="text-[10px] text-on-surface-variant">{dur > 0 ? fmt(dur) : "--:--"}</Text></View>
+          <View 
+            style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.1)" }}
+            className="h-1 rounded-full overflow-hidden"
+          >
+            <View 
+              style={{ width: `${pct}%`, backgroundColor: colors.primary }} 
+              className="h-full" 
+            />
+          </View>
+          <View className="flex-row justify-between mt-1">
+            <Text style={{ fontSize: 10, color: colors.outline }}>{fmt(cur)}</Text>
+            <Text style={{ fontSize: 10, color: colors.outline }}>{dur > 0 ? fmt(dur) : "--:--"}</Text>
+          </View>
           {media.error && <Text className="text-[10px] text-red-500 font-semibold mt-1">Audio expired or unavailable</Text>}
         </View>
-        <View className="w-8 h-8 rounded-full bg-outline-variant/20 items-center justify-center"><Icon name="mic" size={16} className="text-on-surface-variant" /></View>
+        <View 
+          style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)" }}
+          className="w-8 h-8 rounded-full items-center justify-center"
+        >
+          <Icon name="mic" size={16} color={colors.outline} />
+        </View>
       </View>
     </Bubble>
   );
 });
 
-const SimulatedAudioMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
-  const media = useMessageMedia({
-    mediaId: message.mediaId,
-    messageType: message.type,
-    chatId: message.chatId,
-    directUrl: message.mediaUrl,
-    phoneNumberId: message.accountId,
-  });
-  const [playing, setPlaying] = useState(false);
-  const [pos, setPos] = useState(0);
-  const MOCK = 30000;
-  const iRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => () => { if (iRef.current) clearInterval(iRef.current); }, []);
-  const fmt = (ms: number) => { const t = Math.floor(ms / 1000); return `${Math.floor(t / 60)}:${t % 60 < 10 ? "0" : ""}${t % 60}`; };
-  const toggle = () => {
-    if (!media.url) { Alert.alert("Unavailable", "Audio URL not available."); return; }
-    if (playing) { if (iRef.current) clearInterval(iRef.current); setPlaying(false); }
-    else { Linking.openURL(media.url).catch(() => { }); setPlaying(true); iRef.current = setInterval(() => { setPos(p => { if (p >= MOCK) { if (iRef.current) clearInterval(iRef.current); setPlaying(false); return 0; } return p + 500; }); }, 500); }
-  };
-  return (
-    <Bubble message={message} wide>
-      <View className="flex-row items-center gap-3 bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 min-w-[240px]">
-        <Pressable onPress={toggle} disabled={media.loading || !media.url} className="w-10 h-10 rounded-full bg-primary-container items-center justify-center active:opacity-80">
-          {media.loading ? <ActivityIndicator size="small" color="#00326b" /> : <Icon name={playing ? "pause" : "play-arrow"} size={22} color="#00326b" />}
-        </Pressable>
-        <View className="flex-1">
-          <View className="h-1 bg-outline-variant/40 rounded-full overflow-hidden"><View className="h-full bg-primary" style={{ width: `${(pos / MOCK) * 100}%` }} /></View>
-          <View className="flex-row justify-between mt-1"><Text className="text-[10px] text-on-surface-variant">{fmt(pos)}</Text><Text className="text-[10px] text-on-surface-variant">--:--</Text></View>
-          {media.error && <Text className="text-[10px] text-red-500 font-semibold mt-1">Audio expired or unavailable</Text>}
-        </View>
-        <View className="w-8 h-8 rounded-full bg-outline-variant/20 items-center justify-center"><Icon name="mic" size={16} className="text-on-surface-variant" /></View>
-      </View>
-    </Bubble>
-  );
-});
 const AudioMessage = NativeAudioMessage;
 
 const DocumentMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const media = useMessageMedia({
     mediaId: message.mediaId,
     messageType: message.type,
@@ -475,6 +626,7 @@ const DocumentMessage = React.memo(({ message }: { message: NormalizedChatMessag
   const [downloading, setDownloading] = useState(false);
   const fileName = message.mediaFileName || message.content || "Document";
   const ext = fileName.includes(".") ? fileName.split(".").pop()?.toUpperCase() : message.mediaMimeType || "DOC";
+
   const handleDownload = async () => {
     if (downloading) return;
     const url = media.url || message.mediaUrl || "";
@@ -482,23 +634,48 @@ const DocumentMessage = React.memo(({ message }: { message: NormalizedChatMessag
     setDownloading(true);
     try { await Linking.openURL(url); } catch { Alert.alert("Error", "Could not open document."); } finally { setDownloading(false); }
   };
+
   return (
     <Bubble message={message} wide>
-      <Pressable onPress={handleDownload} disabled={downloading || media.loading} className="flex-row items-center gap-3 bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 active:opacity-80 min-w-[240px]">
-        <View className="w-10 h-10 rounded-lg bg-red-50 items-center justify-center"><Icon name="description" size={22} color="#dc2626" /></View>
+      <Pressable 
+        onPress={handleDownload} 
+        disabled={downloading || media.loading} 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.7)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="flex-row items-center gap-3 rounded-xl p-3 active:opacity-80 min-w-[240px]"
+      >
+        <View 
+          style={{ backgroundColor: isDark ? "rgba(239, 68, 68, 0.2)" : "#fee2e2" }}
+          className="w-10 h-10 rounded-lg items-center justify-center"
+        >
+          <Icon name="description" size={22} color="#ef4444" />
+        </View>
         <View className="flex-1">
-          <Text numberOfLines={1} className="font-semibold text-on-surface text-sm">{fileName}</Text>
-          <Text className="text-[10px] text-on-surface-variant uppercase mt-0.5">{[formatFileSize(message.mediaFileSize), ext].filter(Boolean).join(" - ") || "document"}</Text>
+          <Text numberOfLines={1} style={{ color: colors.onSurface, fontSize: 14, fontWeight: "600" }}>{fileName}</Text>
+          <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }} className="uppercase">
+            {[formatFileSize(message.mediaFileSize), ext].filter(Boolean).join(" - ") || "document"}
+          </Text>
           {media.error && <Text className="text-[10px] text-red-500 font-semibold mt-1">Media expired or unavailable</Text>}
         </View>
-        <View className="w-8 h-8 rounded-full border border-outline-variant/50 items-center justify-center">
-          {downloading || media.loading ? <ActivityIndicator size="small" color="#737782" /> : <Icon name="download" size={18} className="text-on-surface-variant" />}
+        <View 
+          style={{ borderColor: colors.divider, borderWidth: 1 }}
+          className="w-8 h-8 rounded-full items-center justify-center"
+        >
+          {downloading || media.loading ? (
+            <ActivityIndicator size="small" color={colors.outline} />
+          ) : (
+            <Icon name="download" size={18} color={colors.outline} />
+          )}
         </View>
       </Pressable>
-      {message.content && message.content !== fileName ? <RichText text={message.content} muted /> : null}
+      {message.content && message.content !== fileName ? <RichText text={message.content} muted isOutgoing={message.isOutgoing} /> : null}
     </Bubble>
   );
 });
+
 const getTemplateHeaderMedia = (header: any) => {
   const param = asArray<any>(header?.parameters)[0] || header;
   const type = String(param?.type || header?.format || header?.type || "").toUpperCase();
@@ -510,7 +687,11 @@ const getTemplateHeaderMedia = (header: any) => {
   if (loc) return { type: "LOCATION", ...loc };
   return { type, text: header?.text || param?.text || "" };
 };
+
 const TemplateHeader = React.memo(({ message, header }: { message: NormalizedChatMessage; header: any }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const hm = getTemplateHeaderMedia(header);
   const resolved = useMessageMedia({
     mediaId: hm.id || message.mediaId,
@@ -523,11 +704,17 @@ const TemplateHeader = React.memo(({ message, header }: { message: NormalizedCha
   const [modal, setModal] = useState(false);
 
   if (hm.type === "IMAGE") {
-    if (!resolved.url && resolved.loading) return <View className="w-full h-32 rounded-lg bg-surface-container-lowest items-center justify-center mb-3"><ActivityIndicator size="small" color="#00326b" /></View>;
+    if (!resolved.url && resolved.loading) return <View className="w-full h-32 rounded-lg bg-surface-container-lowest items-center justify-center mb-3"><ActivityIndicator size="small" color={colors.primary} /></View>;
     if (resolved.url) return (
       <>
         <Pressable onPress={() => setModal(true)} className="active:opacity-90">
-          <Image source={{ uri: resolved.url }} style={{ width: 250, aspectRatio: 1, borderRadius: 12, maxHeight: 650, }} className=" bg-surface-container-lowest mb-3" contentFit="cover" />
+          <Image
+            source={{ uri: resolved.url }}
+            style={{ width: 250, aspectRatio: 1, borderRadius: 12, maxHeight: 650 }}
+            className="mb-3"
+            contentFit="cover"
+            onError={() => {}}
+          />
         </Pressable>
         <FullscreenMediaModal
           visible={modal}
@@ -561,15 +748,32 @@ const TemplateHeader = React.memo(({ message, header }: { message: NormalizedCha
       </>
     );
   }
-  if (hm.type === "DOCUMENT") return <View className="flex-row items-center gap-2 bg-surface-container-lowest rounded-lg p-2 mb-3"><Icon name="description" size={18} color="#dc2626" /><Text className="text-xs font-semibold text-on-surface truncate flex-1" numberOfLines={1}>{hm.filename || "Document"}</Text></View>;
-  if (hm.type === "LOCATION" && (hm as any).latitude && (hm as any).longitude) return <View className="w-full h-24 rounded-lg bg-surface-container-lowest mb-3 items-center justify-center gap-1"><Icon name="place" size={28} color="#0284c7" /><Text className="text-xs text-on-surface-variant font-semibold">{(hm as any).latitude}, {(hm as any).longitude}</Text></View>;
-  if (hm.text) return <Text className="font-bold text-on-surface text-sm mb-2">{hm.text}</Text>;
+  if (hm.type === "DOCUMENT") return (
+    <View 
+      style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#ffffff", borderColor: colors.divider, borderWidth: 1 }}
+      className="flex-row items-center gap-2 rounded-lg p-2 mb-3"
+    >
+      <Icon name="description" size={18} color="#ef4444" />
+      <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }} className="truncate flex-1" numberOfLines={1}>{hm.filename || "Document"}</Text>
+    </View>
+  );
+  if (hm.type === "LOCATION" && (hm as any).latitude && (hm as any).longitude) return (
+    <View 
+      style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#ffffff", borderColor: colors.divider, borderWidth: 1 }}
+      className="w-full h-24 rounded-lg mb-3 items-center justify-center gap-1"
+    >
+      <Icon name="place" size={28} color="#0284c7" />
+      <Text style={{ color: colors.outline, fontSize: 12, fontWeight: "600" }}>{(hm as any).latitude}, {(hm as any).longitude}</Text>
+    </View>
+  );
+  if (hm.text) return <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700", marginBottom: 8 }}>{hm.text}</Text>;
   return null;
 });
 
-
-
 const TemplateMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const template = getTemplatePayload(message);
   const components = asArray<any>(template?.savedContent?.template?.components || template?.components);
   const header = components.find((c: any) => String(c?.type).toLowerCase() === "header");
@@ -581,13 +785,21 @@ const TemplateMessage = React.memo(({ message }: { message: NormalizedChatMessag
   const title = (message as any).templateTitle || (message as any).templateName || template?.name || "Template";
   const bodyText = message.content || body?.text || body?.parameters?.map?.((p: any) => p?.text).filter(Boolean).join(" ") || title;
   const footerText = footer?.text || template?.footer || "";
+
   return (
     <Bubble message={message} wide>
-      <View className="bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 min-w-[250px]">
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl p-3 min-w-[250px]"
+      >
         {header && <TemplateHeader message={message} header={header} />}
-        <Text className="font-bold text-on-surface text-sm">{title}</Text>
-        {bodyText ? <RichText text={bodyText} muted /> : null}
-        {footerText ? <Text className="text-[10px] text-on-surface-variant/70 mt-2">{footerText}</Text> : null}
+        <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700" }}>{title}</Text>
+        {bodyText ? <RichText text={bodyText} muted isOutgoing={message.isOutgoing} /> : null}
+        {footerText ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 8 }}>{footerText}</Text> : null}
         {carousel?.cards?.length ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3 -mx-1">
             {(carousel.cards as any[]).map((card: any, ci: number) => {
@@ -596,10 +808,22 @@ const TemplateMessage = React.memo(({ message }: { message: NormalizedChatMessag
               const cb = cc.find((c: any) => String(c?.type).toLowerCase() === "body");
               const cbtn = asArray<any>(cc.find((c: any) => String(c?.type).toLowerCase() === "buttons")?.buttons);
               return (
-                <View key={ci} className="w-52 mr-2 bg-surface rounded-xl overflow-hidden border border-outline-variant/20 shadow-xs">
+                <View 
+                  key={ci} 
+                  style={{
+                    backgroundColor: isDark ? "#121d2b" : "#ffffff",
+                    borderColor: colors.divider,
+                    borderWidth: 1,
+                  }}
+                  className="w-52 mr-2 rounded-xl overflow-hidden shadow-xs"
+                >
                   {ch && <TemplateHeader message={message} header={ch} />}
-                  {cb?.text ? <View className="p-2"><RichText text={cb.text} muted /></View> : null}
-                  {cbtn.map((btn: any, bi: number) => <View key={bi} className="px-2 pb-1"><ActionChip label={btn?.text || btn?.title || "Action"} href={btn?.url} /></View>)}
+                  {cb?.text ? <View className="p-2"><RichText text={cb.text} muted isOutgoing={message.isOutgoing} /></View> : null}
+                  {cbtn.map((btn: any, bi: number) => (
+                    <View key={bi} className="px-2 pb-1">
+                      <ActionChip label={btn?.text || btn?.title || "Action"} href={btn?.url} />
+                    </View>
+                  ))}
                 </View>
               );
             })}
@@ -618,6 +842,7 @@ const getReadableIFallback = (value: any): string => {
   if (typeof value !== "object") return "";
   return String(value.body?.text || value.body || value.text || value.title || value.name || value.display_text || value.button_reply?.title || value.list_reply?.title || value.nfm_reply?.body || value.nfm_reply?.name || value.parameters?.display_text || value.parameters?.url || value.url || value.id || "");
 };
+
 const getIResponseText = (reply: any): string => {
   const response = reply?.response_json || reply?.response || reply?.data;
   const parsed = parseMaybeJson(response);
@@ -626,11 +851,14 @@ const getIResponseText = (reply: any): string => {
 };
 
 const InteractiveMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const interactive = getInteractivePayload(message);
   const type = String(interactive?.type || (message as any).interactive_type || (message as any).message?.interactive?.type || "").toLowerCase();
   const reply = interactive?.button_reply || interactive?.list_reply || interactive?.nfm_reply || (message as any).message?.interactive?.button_reply || (message as any).message?.interactive?.list_reply || (message as any).message?.interactive?.nfm_reply;
   if (reply && (type === "button_reply" || type === "list_reply" || type === "nfm_reply")) {
-    return <Bubble message={message}><RichText text={getIResponseText(reply) || "Interactive response"} /></Bubble>;
+    return <Bubble message={message}><RichText text={getIResponseText(reply) || "Interactive response"} isOutgoing={message.isOutgoing} /></Bubble>;
   }
   const headerObj = interactive?.header || (message as any).message?.interactive?.header || null;
   const body = String(message.content || interactive?.body?.text || interactive?.body || interactive?.text || interactive?.nfm_reply?.body || interactive?.nfm_reply?.name || "");
@@ -648,11 +876,23 @@ const InteractiveMessage = React.memo(({ message }: { message: NormalizedChatMes
 
   return (
     <Bubble message={message} wide>
-      <View className="bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 min-w-[250px]">
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl p-3 min-w-[250px]"
+      >
         {headerImageUrl && (
           <>
             <Pressable onPress={() => setModal(true)} className="active:opacity-90">
-              <Image source={{ uri: headerImageUrl }} className="w-full h-32 rounded-lg bg-surface-container-lowest mb-3" contentFit="cover" />
+              <Image
+                source={{ uri: headerImageUrl }}
+                className="w-full h-32 rounded-lg mb-3"
+                contentFit="cover"
+                onError={() => {}}
+              />
             </Pressable>
             <FullscreenMediaModal
               visible={modal}
@@ -663,19 +903,32 @@ const InteractiveMessage = React.memo(({ message }: { message: NormalizedChatMes
             />
           </>
         )}
-        {headerText ? <Text className="font-bold text-on-surface text-sm mb-1">{headerText}</Text> : null}
-        <RichText text={fallback} />
-        {footer ? <Text className="text-[10px] text-on-surface-variant/70 mt-2">{footer}</Text> : null}
-        {isAddrReq && message.isOutgoing && <View className="mt-2 bg-[#25D366] rounded-lg py-2 flex-row items-center justify-center gap-2"><Icon name="place" size={16} color="#fff" /><Text className="text-xs font-bold text-white">Provide Address</Text></View>}
+        {headerText ? <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700", marginBottom: 4 }}>{headerText}</Text> : null}
+        <RichText text={fallback} isOutgoing={message.isOutgoing} />
+        {footer ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 8 }}>{footer}</Text> : null}
+        {isAddrReq && message.isOutgoing && (
+          <View className="mt-2 bg-[#25D366] rounded-lg py-2 flex-row items-center justify-center gap-2">
+            <Icon name="place" size={16} color="#fff" />
+            <Text className="text-xs font-bold text-white">Provide Address</Text>
+          </View>
+        )}
         {isAddrReq && !message.isOutgoing && <ActionChip label="Address received" />}
         {ctaLabel && <ActionChip label={String(ctaLabel)} href={ctaUrl} />}
         {buttons.map((btn: any, idx: number) => <ActionChip key={idx} label={btn?.reply?.title || btn?.title || btn?.text || "Option"} />)}
         {rows.slice(0, 8).map((row: any, idx: number) => (
-          <View key={idx} className="mt-2 p-2 bg-surface-container-lowest border border-outline-variant/20 rounded-lg flex-row gap-2 items-start">
-            <Icon name="list" size={14} color="#00326b" />
+          <View 
+            key={idx} 
+            style={{
+              backgroundColor: isDark ? "#121d2b" : "#ffffff",
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }}
+            className="mt-2 p-2 rounded-lg flex-row gap-2 items-start"
+          >
+            <Icon name="list" size={14} color={colors.primary} />
             <View className="flex-1">
-              <Text className="text-xs font-semibold text-on-surface" numberOfLines={1}>{row?.title || row?.id || "List option"}</Text>
-              {row?.description ? <Text className="text-[10px] text-on-surface-variant mt-0.5" numberOfLines={2}>{row.description}</Text> : null}
+              <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>{row?.title || row?.id || "List option"}</Text>
+              {row?.description ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }} numberOfLines={2}>{row.description}</Text> : null}
             </View>
           </View>
         ))}
@@ -683,34 +936,55 @@ const InteractiveMessage = React.memo(({ message }: { message: NormalizedChatMes
     </Bubble>
   );
 });
+
 const ButtonMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const colors = useThemeStore((state) => state.colors);
   const raw = (message as any).message?.button || (message as any).button || {};
   const text = message.content || raw?.text || raw?.payload || "Button response";
+
   return (
     <Bubble message={message}>
       <ReplyPreview message={message} />
       <View className="flex-row items-center gap-2">
-        <Icon name="reply" size={14} className="text-primary" />
-        <RichText text={text} />
+        <Icon name="reply" size={14} color={colors.primary} />
+        <RichText text={text} isOutgoing={message.isOutgoing} />
       </View>
     </Bubble>
   );
 });
 
 const OrderMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const colors = useThemeStore((state) => state.colors);
+  const isDark = useThemeStore((state) => state.isDark);
+
   const order = (message as any).order || (message as any).message?.order || getMediaPayload(message);
   const items = asArray<any>(order?.product_items || order?.items);
+
   return (
     <Bubble message={message} wide>
-      <View className="bg-surface-container-low border border-emerald-500/20 rounded-xl p-3 min-w-[250px]">
-        <View className="flex-row items-center gap-2 mb-2"><Icon name="shopping-cart" size={16} color="#059669" /><Text className="font-bold text-emerald-700 text-sm">Order</Text></View>
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: isDark ? "rgba(16, 185, 129, 0.3)" : "rgba(16, 185, 129, 0.2)",
+          borderWidth: 1,
+        }}
+        className="rounded-xl p-3 min-w-[250px]"
+      >
+        <View className="flex-row items-center gap-2 mb-2">
+          <Icon name="shopping-cart" size={16} color={isDark ? "#34d399" : "#059669"} />
+          <Text style={{ color: isDark ? "#34d399" : "#059669", fontWeight: "700", fontSize: 14 }}>Order</Text>
+        </View>
         {items.slice(0, 6).map((item: any, idx: number) => (
-          <View key={idx} className="flex-row justify-between py-1 border-b border-outline-variant/10">
-            <Text className="text-xs text-on-surface flex-1 mr-3" numberOfLines={1}>{item?.name || item?.product_retailer_id || "Product"}</Text>
-            <Text className="text-xs font-bold text-on-surface-variant">x{item?.quantity || 1}</Text>
+          <View 
+            key={idx} 
+            style={{ borderBottomColor: colors.divider, borderBottomWidth: 1 }}
+            className="flex-row justify-between py-1"
+          >
+            <Text style={{ color: colors.onSurface, fontSize: 12 }} className="flex-1 mr-3" numberOfLines={1}>{item?.name || item?.product_retailer_id || "Product"}</Text>
+            <Text style={{ color: colors.outline, fontSize: 12, fontWeight: "700" }}>x{item?.quantity || 1}</Text>
           </View>
         ))}
-        {items.length === 0 && <RichText text={message.content || "Order details unavailable"} muted />}
+        {items.length === 0 && <RichText text={message.content || "Order details unavailable"} muted isOutgoing={message.isOutgoing} />}
       </View>
     </Bubble>
   );
@@ -742,11 +1016,15 @@ const getOrg = (c: any): { value: string; label?: string }[] => {
 };
 
 const ContactsMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const contacts = getContactsPayload(message);
   const loadContacts = useSyncStore(s => s.loadContacts);
   const [savingIdx, setSavingIdx] = useState<number | null>(null);
   const [savedSet, setSavedSet] = useState<Set<number>>(() => new Set());
   const [errIdx, setErrIdx] = useState<number | null>(null);
+
   const handleSave = async (c: any, idx: number) => {
     const phone = getPhones(c)[0]?.value || "";
     if (!phone || savingIdx !== null) return;
@@ -761,37 +1039,119 @@ const ContactsMessage = React.memo(({ message }: { message: NormalizedChatMessag
       setSavedSet(prev => new Set(prev).add(idx));
     } catch { setErrIdx(idx); } finally { setSavingIdx(null); }
   };
-  if (!contacts.length) return <Bubble message={message}><View className="flex-row items-center gap-2 py-1 min-w-[200px]"><Icon name="contacts" size={20} className="text-on-surface-variant" /><Text className="text-sm font-semibold text-on-surface-variant">Contact details unavailable</Text></View></Bubble>;
+
+  if (!contacts.length) return (
+    <Bubble message={message}>
+      <View className="flex-row items-center gap-2 py-1 min-w-[200px]">
+        <Icon name="contacts" size={20} color={colors.outline} />
+        <Text style={{ color: colors.outline, fontSize: 13.5, fontWeight: "600" }}>Contact details unavailable</Text>
+      </View>
+    </Bubble>
+  );
+
   return (
     <Bubble message={message} wide>
-      <View className="bg-surface-container-low border border-outline-variant/30 rounded-xl overflow-hidden min-w-[260px]">
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl overflow-hidden min-w-[260px]"
+      >
         {contacts.map((c: any, idx: number) => {
           const name = getContactName(c);
-          const phones = getPhones(c); const emails = getEmails(c); const addrs = getAddresses(c); const org = getOrg(c);
-          const saved = savedSet.has(idx); const saving = savingIdx === idx;
+          const phones = getPhones(c); 
+          const emails = getEmails(c); 
+          const addrs = getAddresses(c); 
+          const org = getOrg(c);
+          const saved = savedSet.has(idx); 
+          const saving = savingIdx === idx;
+
           return (
-            <View key={idx} className={cn("p-3", idx > 0 && "border-t border-outline-variant/20")}>
+            <View 
+              key={idx} 
+              style={{ borderTopColor: idx > 0 ? colors.divider : "transparent", borderTopWidth: idx > 0 ? 1 : 0 }}
+              className="p-3"
+            >
               <View className="flex-row items-start justify-between gap-3">
                 <View className="flex-row items-center gap-3 flex-1 min-w-0">
-                  <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center"><Text className="font-bold text-primary text-xs">{getContactInitials(name)}</Text></View>
+                  <View 
+                    style={{ backgroundColor: isDark ? "rgba(171, 199, 255, 0.16)" : "#eff4ff" }}
+                    className="w-10 h-10 rounded-full items-center justify-center"
+                  >
+                    <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>{getContactInitials(name)}</Text>
+                  </View>
                   <View className="flex-1 min-w-0">
-                    <Text className="font-semibold text-on-surface text-sm" numberOfLines={1}>{name}</Text>
-                    <Text className="text-[10px] text-on-surface-variant mt-0.5">Contact card</Text>
+                    <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "600" }} numberOfLines={1}>{name}</Text>
+                    <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }}>Contact card</Text>
                   </View>
                 </View>
                 {phones.length > 0 && (
-                  <Pressable onPress={() => handleSave(c, idx)} disabled={savingIdx !== null || saved} className="flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg active:opacity-70" style={{ backgroundColor: "rgba(0,50,107,0.07)" }}>
-                    <Icon name={saving ? "hourglass-empty" : saved ? "check" : "save"} size={13} color="#00326b" />
-                    <Text className="text-[10px] font-bold text-primary">{saving ? "Saving" : saved ? "Saved" : "Save"}</Text>
+                  <Pressable 
+                    onPress={() => handleSave(c, idx)} 
+                    disabled={savingIdx !== null || saved} 
+                    style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 50, 107, 0.07)" }}
+                    className="flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg active:opacity-70"
+                  >
+                    <Icon name={saving ? "hourglass-empty" : saved ? "check" : "save"} size={13} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontSize: 10, fontWeight: "700" }}>{saving ? "Saving" : saved ? "Saved" : "Save"}</Text>
                   </Pressable>
                 )}
               </View>
               <View className="mt-3 gap-2">
-                {phones.map((p: any, pi: number) => <Pressable key={pi} onPress={() => Linking.openURL(`tel:${p.value.replace(/[^0-9+]/g, "")}`).catch(() => { })} className="flex-row items-center gap-2.5 p-1.5 rounded-lg active:bg-surface-container"><Icon name="phone" size={15} className="text-on-surface-variant" /><View className="flex-1"><Text className="text-sm font-medium text-primary">{p.value}</Text><Text className="text-[10px] text-on-surface-variant">{p.label || "Phone"}</Text></View></Pressable>)}
-                {emails.map((e: any, ei: number) => <Pressable key={ei} onPress={() => Linking.openURL(`mailto:${e.value}`).catch(() => { })} className="flex-row items-center gap-2.5 p-1.5 rounded-lg active:bg-surface-container"><Icon name="email" size={15} className="text-on-surface-variant" /><View className="flex-1"><Text className="text-sm font-medium text-primary" numberOfLines={1}>{e.value}</Text><Text className="text-[10px] text-on-surface-variant">{e.label || "Email"}</Text></View></Pressable>)}
-                {addrs.map((a: any, ai: number) => <View key={ai} className="flex-row items-start gap-2.5 p-1.5"><Icon name="place" size={15} className="text-on-surface-variant" /><View className="flex-1"><Text className="text-sm font-medium text-on-surface leading-snug">{a.value}</Text><Text className="text-[10px] text-on-surface-variant">{a.label || "Address"}</Text></View></View>)}
-                {org.map((o: any, oi: number) => <View key={oi} className="flex-row items-start gap-2.5 p-1.5"><Icon name="business" size={15} className="text-on-surface-variant" /><View className="flex-1"><Text className="text-sm font-medium text-on-surface leading-snug">{o.value}</Text><Text className="text-[10px] text-on-surface-variant">{o.label}</Text></View></View>)}
-                {!phones.length && !emails.length && !addrs.length && !org.length && <View className="px-2 py-2 bg-surface-container-lowest rounded-lg"><Text className="text-xs text-on-surface-variant">No contact details available.</Text></View>}
+                {phones.map((p: any, pi: number) => (
+                  <Pressable 
+                    key={pi} 
+                    onPress={() => Linking.openURL(`tel:${p.value.replace(/[^0-9+]/g, "")}`).catch(() => { })} 
+                    className="flex-row items-center gap-2.5 p-1.5 rounded-lg active:opacity-70"
+                  >
+                    <Icon name="phone" size={15} color={colors.outline} />
+                    <View className="flex-1">
+                      <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "500" }}>{p.value}</Text>
+                      <Text style={{ color: colors.outline, fontSize: 10 }}>{p.label || "Phone"}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+                {emails.map((e: any, ei: number) => (
+                  <Pressable 
+                    key={ei} 
+                    onPress={() => Linking.openURL(`mailto:${e.value}`).catch(() => { })} 
+                    className="flex-row items-center gap-2.5 p-1.5 rounded-lg active:opacity-70"
+                  >
+                    <Icon name="email" size={15} color={colors.outline} />
+                    <View className="flex-1">
+                      <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "500" }} numberOfLines={1}>{e.value}</Text>
+                      <Text style={{ color: colors.outline, fontSize: 10 }}>{e.label || "Email"}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+                {addrs.map((a: any, ai: number) => (
+                  <View key={ai} className="flex-row items-start gap-2.5 p-1.5">
+                    <Icon name="place" size={15} color={colors.outline} />
+                    <View className="flex-1">
+                      <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "500", lineHeight: 18 }}>{a.value}</Text>
+                      <Text style={{ color: colors.outline, fontSize: 10 }}>{a.label || "Address"}</Text>
+                    </View>
+                  </View>
+                ))}
+                {org.map((o: any, oi: number) => (
+                  <View key={oi} className="flex-row items-start gap-2.5 p-1.5">
+                    <Icon name="business" size={15} color={colors.outline} />
+                    <View className="flex-1">
+                      <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "500", lineHeight: 18 }}>{o.value}</Text>
+                      <Text style={{ color: colors.outline, fontSize: 10 }}>{o.label}</Text>
+                    </View>
+                  </View>
+                ))}
+                {!phones.length && !emails.length && !addrs.length && !org.length && (
+                  <View 
+                    style={{ backgroundColor: colors.surfaceContainerLowest }}
+                    className="px-2 py-2 rounded-lg"
+                  >
+                    <Text style={{ color: colors.outline, fontSize: 12 }}>No contact details available.</Text>
+                  </View>
+                )}
                 {errIdx === idx && <Text className="text-[10px] font-semibold text-red-500">Could not save. Check the phone number.</Text>}
               </View>
             </View>
@@ -803,28 +1163,47 @@ const ContactsMessage = React.memo(({ message }: { message: NormalizedChatMessag
 });
 
 const LocationMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
   const location = getLocationPayload(message);
   const lat = location?.latitude ?? location?.lat;
   const lng = location?.longitude ?? location?.lng ?? location?.long;
   const name = location?.name || message.content || "Shared location";
   const address = location?.address || "";
+
   return (
     <Bubble message={message} wide>
-      <View className="bg-surface-container-low border border-outline-variant/30 rounded-xl overflow-hidden min-w-[240px]">
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl overflow-hidden min-w-[240px]"
+      >
         <View className="p-3">
           <View className="flex-row items-start gap-2">
             <Icon name="place" size={20} color="#0284c7" />
             <View className="flex-1">
-              <Text className="font-semibold text-on-surface text-sm" numberOfLines={1}>{name}</Text>
-              {address ? <Text className="text-xs text-on-surface-variant mt-0.5" numberOfLines={2}>{address}</Text> : null}
-              {lat !== undefined && lng !== undefined ? <Text className="text-[10px] text-on-surface-variant/70 mt-0.5">{lat}, {lng}</Text> : null}
+              <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "600" }} numberOfLines={1}>{name}</Text>
+              {address ? <Text style={{ color: colors.outline, fontSize: 12, marginTop: 2 }} numberOfLines={2}>{address}</Text> : null}
+              {lat !== undefined && lng !== undefined ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }}>{lat}, {lng}</Text> : null}
             </View>
           </View>
         </View>
         {lat !== undefined && lng !== undefined && (
-          <Pressable onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`).catch(() => Alert.alert("Error", "Could not open Google Maps."))} className="py-2.5 flex-row justify-center items-center gap-1.5 border-t border-outline-variant/20 active:opacity-80" style={{ backgroundColor: "rgba(207,233,250,0.6)" }}>
-            <Icon name="map" size={16} color="#00326b" />
-            <Text className="text-xs font-bold text-on-primary-container">Open in Maps</Text>
+          <Pressable 
+            onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`).catch(() => Alert.alert("Error", "Could not open Google Maps."))} 
+            style={{ 
+              backgroundColor: isDark ? "rgba(2, 132, 199, 0.2)" : "rgba(207, 233, 250, 0.6)",
+              borderTopColor: colors.divider,
+              borderTopWidth: 1,
+            }}
+            className="py-2.5 flex-row justify-center items-center gap-1.5 active:opacity-80"
+          >
+            <Icon name="map" size={16} color={isDark ? "#7dd3fc" : "#00326b"} />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: isDark ? "#7dd3fc" : "#00326b" }}>Open in Maps</Text>
           </Pressable>
         )}
       </View>
@@ -833,6 +1212,8 @@ const LocationMessage = React.memo(({ message }: { message: NormalizedChatMessag
 });
 
 const StickerMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const colors = useThemeStore((state) => state.colors);
+
   const media = useMessageMedia({
     mediaId: message.mediaId,
     messageType: message.type,
@@ -840,22 +1221,37 @@ const StickerMessage = React.memo(({ message }: { message: NormalizedChatMessage
     directUrl: message.mediaUrl,
     phoneNumberId: message.accountId,
   });
+
   return (
     <Bubble message={message}>
-      {media.loading ? <View className="w-32 h-32 items-center justify-center"><ActivityIndicator size="small" color="#00326b" /></View>
-        : media.url ? <Image source={{ uri: media.url }} style={{ width: 128, height: 128 }} className="bg-transparent" contentFit="contain" />
-          : <View className="flex-row items-center gap-2 py-1"><Icon name="sentiment-satisfied" size={20} className="text-on-surface-variant" /><Text className="text-sm font-semibold text-on-surface-variant">Sticker unavailable</Text></View>}
+      {media.loading ? (
+        <View className="w-32 h-32 items-center justify-center">
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : media.url ? (
+        <Image source={{ uri: media.url }} style={{ width: 128, height: 128 }} className="bg-transparent" contentFit="contain" />
+      ) : (
+        <View className="flex-row items-center gap-2 py-1">
+          <Icon name="sentiment-satisfied" size={20} color={colors.outline} />
+          <Text style={{ color: colors.outline, fontSize: 13.5, fontWeight: "600" }}>Sticker unavailable</Text>
+        </View>
+      )}
     </Bubble>
   );
 });
 
 const UnsupportedMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const colors = useThemeStore((state) => state.colors);
   const raw = useMemo(() => { const p = parseMaybeJson(message.content); return typeof p === "string" ? p : message.content; }, [message.content]);
+
   return (
     <Bubble message={message}>
       <View className="flex-row items-start gap-2.5 py-1 max-w-[260px]">
-        <Icon name="info-outline" size={18} className="text-on-surface-variant mt-0.5" />
-        <View className="flex-1"><Text className="text-sm font-semibold text-on-surface">Unsupported message</Text><Text className="text-[10px] text-on-surface-variant mt-0.5">{raw || `Type: ${message.type}`}</Text></View>
+        <Icon name="info-outline" size={18} color={colors.outline} style={{ marginTop: 2 }} />
+        <View className="flex-1">
+          <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "600" }}>Unsupported message</Text>
+          <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }}>{raw || `Type: ${message.type}`}</Text>
+        </View>
       </View>
     </Bubble>
   );
