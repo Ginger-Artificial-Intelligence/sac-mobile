@@ -4,6 +4,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  SharedValue,
 } from "react-native-reanimated";
 
 import { Icon } from "./Icon";
@@ -13,6 +14,7 @@ import { HapticPressable } from "./HapticPressable";
 interface BottomTabBarProps {
   selectedIndex: number;
   onSelect: (index: number) => void;
+  pagePosition?: SharedValue<number>;
 }
 
 const TABS = [
@@ -36,6 +38,7 @@ const PILL_HEIGHT = 40;
 export function BottomTabBar({
   selectedIndex,
   onSelect,
+  pagePosition,
 }: BottomTabBarProps) {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
@@ -50,14 +53,14 @@ export function BottomTabBar({
       : 0;
 
   useEffect(() => {
-    if (!tabWidth) return;
+    if (!tabWidth || pagePosition) return;
 
     indicatorX.value = withSpring(
       selectedIndex * tabWidth +
       (tabWidth - PILL_WIDTH) / 2,
       SPRING
     );
-  }, [selectedIndex, tabWidth]);
+  }, [selectedIndex, tabWidth, pagePosition]);
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -66,19 +69,30 @@ export function BottomTabBar({
 
     const widthPerTab = width / TABS.length;
 
-    indicatorX.value =
-      selectedIndex * widthPerTab +
-      (widthPerTab - PILL_WIDTH) / 2;
+    if (pagePosition) {
+      indicatorX.value =
+        pagePosition.value * widthPerTab +
+        (widthPerTab - PILL_WIDTH) / 2;
+    } else {
+      indicatorX.value =
+        selectedIndex * widthPerTab +
+        (widthPerTab - PILL_WIDTH) / 2;
+    }
   };
 
   const indicatorAnimatedStyle =
-    useAnimatedStyle(() => ({
-      transform: [
-        {
-          translateX: indicatorX.value,
-        },
-      ],
-    }));
+    useAnimatedStyle(() => {
+      if (!tabWidth) return { transform: [{ translateX: 0 }] };
+      if (pagePosition) {
+        const x = pagePosition.value * tabWidth + (tabWidth - PILL_WIDTH) / 2;
+        return {
+          transform: [{ translateX: x }],
+        };
+      }
+      return {
+        transform: [{ translateX: indicatorX.value }],
+      };
+    });
 
   return (
     <View className="absolute bottom-6 left-6 right-6 z-50">

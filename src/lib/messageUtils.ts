@@ -246,25 +246,40 @@ export const normalizeChatMessage = (msg: any): NormalizedChatMessage => {
       }
     } catch (_) {}
   }
-  const message = getMessagePayload(target);
+  const rawMessage = getMessagePayload(target);
   const type = normalizeMessageType(target);
   const media = getMediaPayload(target);
   const fallbackId = `${String(target?.chatId || target?.chat_id || 'message')}-${String(target?.createdAt || target?.created_at || target?.timestamp || '')}-${type}`;
+  const textContent = getMessageText(target);
+  const createdAt = target?.createdAt || target?.created_at || target?.timestamp || target?.messageTimestamp || rawMessage?.timestamp || new Date().toISOString();
+
+  // Ensure inner message object has id (e.g. wamid), timestamp, type, text, and replyMsgId
+  const normalizedMessageObj = {
+    ...rawMessage,
+    id: String(rawMessage?.id || target?.messageId || target?.message_id || target?.wamid || target?._id || target?.id || fallbackId),
+    timestamp: rawMessage?.timestamp || createdAt,
+    type: rawMessage?.type || type,
+    text: rawMessage?.text || textContent,
+    ...(target?.replyMsgId || rawMessage?.replyMsgId ? { replyMsgId: target?.replyMsgId || rawMessage?.replyMsgId } : {}),
+  };
+
   const res = {
     ...target,
-    message,
-    _id: String(target?._id || target?.id || target?.messageId || target?.message_id || message?.id || fallbackId),
+    message: normalizedMessageObj,
+    messageId: normalizedMessageObj.id,
+    _id: String(target?._id || target?.id || target?.messageId || target?.message_id || rawMessage?.id || fallbackId),
     chatId: String(target?.chatId || target?.chat_id || target?.chat?._id || target?.chat?.id || ''),
     isOutgoing: isOutgoingMessage(target),
     type,
-    content: getMessageText(target),
+    content: textContent,
     mediaId: getMediaId(target),
     mediaUrl: getMediaUrl(target),
     mediaMimeType: firstString(target?.mimeType, target?.mime_type, media?.mimeType, media?.mime_type, media?.type),
     mediaFileName: firstString(target?.fileName, target?.filename, target?.file_name, media?.filename, media?.fileName, media?.file_name, media?.name),
     mediaFileSize: firstNumber(target?.fileSize, target?.file_size, target?.size, media?.fileSize, media?.file_size, media?.size),
     senderName: firstString(target?.senderName, target?.sentByName, target?.user?.name, target?.sentBy?.name),
-    createdAt: target?.createdAt || target?.created_at || target?.timestamp || target?.messageTimestamp,
+    createdAt,
+    reply_to: target?.reply_to || target?.message?.reply_to || target?.message?.context || target?.context || undefined,
   };
   return res;
 };

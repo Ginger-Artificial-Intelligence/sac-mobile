@@ -159,7 +159,7 @@ const ReplyPreview = React.memo(({ message }: { message: NormalizedChatMessage }
   const sender = replyTo.sender || replyTo.senderName || "";
   const type = replyTo.message_type || replyTo.type || "";
   const content = replyTo.content ||
-    (type === "image" ? "📷 Image" : type === "video" ? "🎥 Video" : type === "audio" ? "🎤 Audio" : type === "document" ? "📄 Document" : type === "location" ? "📍 Location" : type === "template" ? "📋 Template" : "");
+    (type === "image" ? "📷 Image" : type === "video" ? "🎥 Video" : type === "audio" ? "🎤 Audio" : type === "document" ? "📄 Document" : type === "location" ? "📍 Location" : (type === "template" || replyTo.templateName) ? (replyTo.templateName ? `Template: ${replyTo.templateName}` : "📋 Template") : "");
   if (!sender && !content) return null;
 
   return (
@@ -386,15 +386,13 @@ const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
 
-  const [retryTrigger, setRetryTrigger] = useState(0);
   const media = useMessageMedia({
     mediaId: message.mediaId,
     messageType: message.type,
     chatId: message.chatId,
     directUrl: message.mediaUrl,
-    shouldLoad: true,
     phoneNumberId: message.accountId,
-    retryTrigger,
+    autoLoad: false,
   });
 
   const [modal, setModal] = useState(false);
@@ -412,14 +410,14 @@ const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }
         {media.loading ? (
           <View 
             style={{ 
-              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLowest,
+              backgroundColor: isDark ? "rgba(0,0,0,0.35)" : colors.surfaceContainerLowest,
               borderColor: colors.divider,
               borderWidth: 1,
             }} 
-            className="w-[250px] h-[250px] rounded-xl items-center justify-center gap-2"
+            className="w-[250px] h-[200px] rounded-xl items-center justify-center gap-2"
           >
             <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={{ color: colors.outline, fontSize: 11 }}>Loading image...</Text>
+            <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600" }}>Downloading image…</Text>
           </View>
         ) : media.url && !failed ? (
           <Pressable onPress={() => setModal(true)} className="active:opacity-90">
@@ -437,16 +435,24 @@ const ImageMessage = React.memo(({ message }: { message: NormalizedChatMessage }
           </Pressable>
         ) : (
           <Pressable 
-            onPress={() => setRetryTrigger(prev => prev + 1)} 
+            onPress={media.loadMedia} 
             style={{ 
-              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLow,
+              backgroundColor: isDark ? "rgba(0,0,0,0.35)" : "rgba(0, 50, 107, 0.04)",
               borderColor: colors.divider,
               borderWidth: 1,
             }} 
-            className="w-[250px] h-[250px] rounded-xl items-center justify-center active:opacity-90"
+            className="w-[250px] h-[180px] rounded-xl items-center justify-center active:opacity-85"
           >
-            <Icon name="refresh" size={32} color={colors.primary} />
-            <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600" }} className="mt-2">Failed to load. Tap to retry</Text>
+            <View 
+              style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.15)" : colors.primary }}
+              className="w-12 h-12 rounded-full items-center justify-center mb-2 shadow-sm"
+            >
+              <Icon name="refresh" size={24} color="#ffffff" />
+            </View>
+            <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "700" }}>
+              {media.error ? "Failed to load" : "Image"}
+            </Text>
+            <Text style={{ color: colors.outline, fontSize: 11, marginTop: 2 }}>Tap to load</Text>
           </Pressable>
         )}
         {message.content ? <RichText text={message.content} isOutgoing={message.isOutgoing} /> : null}
@@ -468,21 +474,19 @@ const VideoMessage = React.memo(({ message }: { message: NormalizedChatMessage }
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
 
-  const [retryTrigger, setRetryTrigger] = useState(0);
   const media = useMessageMedia({
     mediaId: message.mediaId,
     messageType: message.type,
     chatId: message.chatId,
     directUrl: message.mediaUrl,
-    shouldLoad: true,
     phoneNumberId: message.accountId,
-    retryTrigger,
+    autoLoad: false,
   });
   const [modal, setModal] = useState(false);
 
   const handlePress = () => {
     if (media.url) setModal(true);
-    else if (message.mediaUrl) Linking.openURL(message.mediaUrl).catch(() => Alert.alert("Error", "Could not open video."));
+    else media.loadMedia();
   };
 
   return (
@@ -491,18 +495,18 @@ const VideoMessage = React.memo(({ message }: { message: NormalizedChatMessage }
         {media.loading ? (
           <View 
             style={{ 
-              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLowest,
+              backgroundColor: isDark ? "rgba(0,0,0,0.35)" : colors.surfaceContainerLowest,
               borderColor: colors.divider,
               borderWidth: 1,
             }} 
-            className="w-[250px] h-[250px] rounded-xl items-center justify-center gap-2"
+            className="w-[250px] h-[200px] rounded-xl items-center justify-center gap-2"
           >
             <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={{ color: colors.outline, fontSize: 11 }}>Loading video...</Text>
+            <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600" }}>Downloading video…</Text>
           </View>
         ) : media.url ? (
-          <Pressable onPress={handlePress} className="active:opacity-90">
-            <View className="w-[250px] h-[250px] rounded-xl bg-black overflow-hidden justify-center items-center">
+          <Pressable onPress={() => setModal(true)} className="active:opacity-90">
+            <View className="w-[250px] h-[200px] rounded-xl bg-black overflow-hidden justify-center items-center">
               <Image
                 source={{ uri: media.url }}
                 style={{ position: "absolute", width: "100%", height: "100%" }}
@@ -516,16 +520,24 @@ const VideoMessage = React.memo(({ message }: { message: NormalizedChatMessage }
           </Pressable>
         ) : (
           <Pressable 
-            onPress={() => setRetryTrigger(prev => prev + 1)} 
+            onPress={media.loadMedia} 
             style={{ 
-              backgroundColor: isDark ? "rgba(0,0,0,0.3)" : colors.surfaceContainerLow,
+              backgroundColor: isDark ? "rgba(0,0,0,0.35)" : "rgba(0, 50, 107, 0.04)",
               borderColor: colors.divider,
               borderWidth: 1,
             }} 
-            className="w-[250px] h-[250px] rounded-xl items-center justify-center active:opacity-90"
+            className="w-[250px] h-[180px] rounded-xl items-center justify-center active:opacity-85"
           >
-            <Icon name="refresh" size={32} color={colors.primary} />
-            <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600" }} className="mt-2">Failed to load. Tap to retry</Text>
+            <View 
+              style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.15)" : colors.primary }}
+              className="w-12 h-12 rounded-full items-center justify-center mb-2 shadow-sm"
+            >
+              <Icon name="refresh" size={24} color="#ffffff" />
+            </View>
+            <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "700" }}>
+              {media.error ? "Failed to load" : "Video"}
+            </Text>
+            <Text style={{ color: colors.outline, fontSize: 11, marginTop: 2 }}>Tap to load</Text>
           </Pressable>
         )}
         {message.content ? <RichText text={message.content} isOutgoing={message.isOutgoing} /> : null}
@@ -553,6 +565,7 @@ const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMes
     chatId: message.chatId,
     directUrl: message.mediaUrl,
     phoneNumberId: message.accountId,
+    autoLoad: false,
   });
   const player = useAudioPlayer(media.url ? { uri: media.url } : null);
   const status = useAudioPlayerStatus(player);
@@ -560,6 +573,16 @@ const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMes
   const dur = status.duration || 0; 
   const cur = status.currentTime || 0; 
   const pct = dur > 0 ? (cur / dur) * 100 : 0;
+
+  const handleAudioPress = () => {
+    if (media.loading) return;
+    if (!media.url) {
+      media.loadMedia();
+      return;
+    }
+    if (status.playing) player.pause();
+    else player.play();
+  };
 
   return (
     <Bubble message={message} wide>
@@ -572,13 +595,15 @@ const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMes
         className="flex-row items-center gap-3 rounded-xl p-3 min-w-[240px]"
       >
         <Pressable 
-          onPress={() => { if (media.loading) return; if (!media.url) { Alert.alert("Unavailable", "Audio not accessible."); return; } if (status.playing) player.pause(); else player.play(); }} 
-          disabled={media.loading || !media.url} 
+          onPress={handleAudioPress} 
+          disabled={media.loading} 
           style={{ backgroundColor: colors.primary }}
           className="w-10 h-10 rounded-full items-center justify-center active:opacity-80"
         >
           {media.loading || status.isBuffering ? (
             <ActivityIndicator size="small" color={colors.onPrimary} />
+          ) : !media.url ? (
+            <Icon name="refresh" size={20} color={colors.onPrimary} />
           ) : (
             <Icon name={status.playing ? "pause" : "play-arrow"} size={22} color={colors.onPrimary} />
           )}
@@ -594,7 +619,7 @@ const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMes
             />
           </View>
           <View className="flex-row justify-between mt-1">
-            <Text style={{ fontSize: 10, color: colors.outline }}>{fmt(cur)}</Text>
+            <Text style={{ fontSize: 10, color: colors.outline }}>{media.url ? fmt(cur) : "Tap to load"}</Text>
             <Text style={{ fontSize: 10, color: colors.outline }}>{dur > 0 ? fmt(dur) : "--:--"}</Text>
           </View>
           {media.error && <Text className="text-[10px] text-red-500 font-semibold mt-1">Audio expired or unavailable</Text>}
@@ -622,6 +647,7 @@ const DocumentMessage = React.memo(({ message }: { message: NormalizedChatMessag
     chatId: message.chatId,
     directUrl: message.mediaUrl,
     phoneNumberId: message.accountId,
+    autoLoad: false,
   });
   const [downloading, setDownloading] = useState(false);
   const fileName = message.mediaFileName || message.content || "Document";
@@ -629,6 +655,10 @@ const DocumentMessage = React.memo(({ message }: { message: NormalizedChatMessag
 
   const handleDownload = async () => {
     if (downloading) return;
+    if (!media.url && message.mediaId) {
+      media.loadMedia();
+      return;
+    }
     const url = media.url || message.mediaUrl || "";
     if (!url) { Alert.alert("Unavailable", "Document URL not available."); return; }
     setDownloading(true);
@@ -666,6 +696,8 @@ const DocumentMessage = React.memo(({ message }: { message: NormalizedChatMessag
         >
           {downloading || media.loading ? (
             <ActivityIndicator size="small" color={colors.outline} />
+          ) : !media.url ? (
+            <Icon name="refresh" size={18} color={colors.outline} />
           ) : (
             <Icon name="download" size={18} color={colors.outline} />
           )}
@@ -688,307 +720,6 @@ const getTemplateHeaderMedia = (header: any) => {
   return { type, text: header?.text || param?.text || "" };
 };
 
-const TemplateHeader = React.memo(({ message, header }: { message: NormalizedChatMessage; header: any }) => {
-  const isDark = useThemeStore((state) => state.isDark);
-  const colors = useThemeStore((state) => state.colors);
-
-  const hm = getTemplateHeaderMedia(header);
-  const resolved = useMessageMedia({
-    mediaId: hm.id || message.mediaId,
-    messageType: String(hm.type).toLowerCase() || message.type,
-    chatId: message.chatId,
-    directUrl: hm.url || message.mediaUrl,
-    phoneNumberId: message.accountId,
-    shouldLoad: true,
-  });
-  const [modal, setModal] = useState(false);
-
-  if (hm.type === "IMAGE") {
-    if (!resolved.url && resolved.loading) return <View className="w-full h-32 rounded-lg bg-surface-container-lowest items-center justify-center mb-3"><ActivityIndicator size="small" color={colors.primary} /></View>;
-    if (resolved.url) return (
-      <>
-        <Pressable onPress={() => setModal(true)} className="active:opacity-90">
-          <Image
-            source={{ uri: resolved.url }}
-            style={{ width: 250, aspectRatio: 1, borderRadius: 12, maxHeight: 650 }}
-            className="mb-3"
-            contentFit="cover"
-            onError={() => {}}
-          />
-        </Pressable>
-        <FullscreenMediaModal
-          visible={modal}
-          onClose={() => setModal(false)}
-          mediaUrl={resolved.url}
-          type="image"
-          message={message}
-        />
-      </>
-    );
-    return null;
-  }
-  if (hm.type === "VIDEO") {
-    const videoUrl = resolved.url || hm.url || message.mediaUrl;
-    return (
-      <>
-        <Pressable onPress={() => videoUrl && setModal(true)} className="active:opacity-90">
-          <View className="w-full h-32 rounded-lg bg-black mb-3 items-center justify-center">
-            <Icon name="play-circle-filled" size={40} color="#fff" />
-          </View>
-        </Pressable>
-        {videoUrl && (
-          <FullscreenMediaModal
-            visible={modal}
-            onClose={() => setModal(false)}
-            mediaUrl={videoUrl}
-            type="video"
-            message={message}
-          />
-        )}
-      </>
-    );
-  }
-  if (hm.type === "DOCUMENT") return (
-    <View 
-      style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#ffffff", borderColor: colors.divider, borderWidth: 1 }}
-      className="flex-row items-center gap-2 rounded-lg p-2 mb-3"
-    >
-      <Icon name="description" size={18} color="#ef4444" />
-      <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }} className="truncate flex-1" numberOfLines={1}>{hm.filename || "Document"}</Text>
-    </View>
-  );
-  if (hm.type === "LOCATION" && (hm as any).latitude && (hm as any).longitude) return (
-    <View 
-      style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#ffffff", borderColor: colors.divider, borderWidth: 1 }}
-      className="w-full h-24 rounded-lg mb-3 items-center justify-center gap-1"
-    >
-      <Icon name="place" size={28} color="#0284c7" />
-      <Text style={{ color: colors.outline, fontSize: 12, fontWeight: "600" }}>{(hm as any).latitude}, {(hm as any).longitude}</Text>
-    </View>
-  );
-  if (hm.text) return <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700", marginBottom: 8 }}>{hm.text}</Text>;
-  return null;
-});
-
-const TemplateMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
-  const isDark = useThemeStore((state) => state.isDark);
-  const colors = useThemeStore((state) => state.colors);
-
-  const template = getTemplatePayload(message);
-  const components = asArray<any>(template?.savedContent?.template?.components || template?.components);
-  const header = components.find((c: any) => String(c?.type).toLowerCase() === "header");
-  const body = components.find((c: any) => String(c?.type).toLowerCase() === "body");
-  const footer = components.find((c: any) => String(c?.type).toLowerCase() === "footer");
-  const btnComp = components.find((c: any) => ["button", "buttons"].includes(String(c?.type).toLowerCase()));
-  const carousel = components.find((c: any) => String(c?.type).toLowerCase() === "carousel");
-  const buttons = asArray<any>(btnComp?.buttons?.length ? btnComp.buttons : btnComp ? [btnComp] : []);
-  const title = (message as any).templateTitle || (message as any).templateName || template?.name || "Template";
-  const bodyText = message.content || body?.text || body?.parameters?.map?.((p: any) => p?.text).filter(Boolean).join(" ") || title;
-  const footerText = footer?.text || template?.footer || "";
-
-  return (
-    <Bubble message={message} wide>
-      <View 
-        style={{
-          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
-          borderColor: colors.divider,
-          borderWidth: 1,
-        }}
-        className="rounded-xl p-3 min-w-[250px]"
-      >
-        {header && <TemplateHeader message={message} header={header} />}
-        <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700" }}>{title}</Text>
-        {bodyText ? <RichText text={bodyText} muted isOutgoing={message.isOutgoing} /> : null}
-        {footerText ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 8 }}>{footerText}</Text> : null}
-        {carousel?.cards?.length ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3 -mx-1">
-            {(carousel.cards as any[]).map((card: any, ci: number) => {
-              const cc = asArray<any>(card.components);
-              const ch = cc.find((c: any) => String(c?.type).toLowerCase() === "header");
-              const cb = cc.find((c: any) => String(c?.type).toLowerCase() === "body");
-              const cbtn = asArray<any>(cc.find((c: any) => String(c?.type).toLowerCase() === "buttons")?.buttons);
-              return (
-                <View 
-                  key={ci} 
-                  style={{
-                    backgroundColor: isDark ? "#121d2b" : "#ffffff",
-                    borderColor: colors.divider,
-                    borderWidth: 1,
-                  }}
-                  className="w-52 mr-2 rounded-xl overflow-hidden shadow-xs"
-                >
-                  {ch && <TemplateHeader message={message} header={ch} />}
-                  {cb?.text ? <View className="p-2"><RichText text={cb.text} muted isOutgoing={message.isOutgoing} /></View> : null}
-                  {cbtn.map((btn: any, bi: number) => (
-                    <View key={bi} className="px-2 pb-1">
-                      <ActionChip label={btn?.text || btn?.title || "Action"} href={btn?.url} />
-                    </View>
-                  ))}
-                </View>
-              );
-            })}
-          </ScrollView>
-        ) : null}
-        {buttons.map((btn: any, idx: number) => <ActionChip key={idx} label={btn?.text || btn?.title || btn?.parameters?.[0]?.text || "Action"} href={btn?.url || btn?.link} />)}
-      </View>
-    </Bubble>
-  );
-});
-
-const getReadableIFallback = (value: any): string => {
-  if (!value) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map(getReadableIFallback).filter(Boolean).join("\n");
-  if (typeof value !== "object") return "";
-  return String(value.body?.text || value.body || value.text || value.title || value.name || value.display_text || value.button_reply?.title || value.list_reply?.title || value.nfm_reply?.body || value.nfm_reply?.name || value.parameters?.display_text || value.parameters?.url || value.url || value.id || "");
-};
-
-const getIResponseText = (reply: any): string => {
-  const response = reply?.response_json || reply?.response || reply?.data;
-  const parsed = parseMaybeJson(response);
-  const responseText = parsed && typeof parsed === "object" ? Object.entries(parsed as Record<string, any>).map(([k, v]) => k + ": " + (getReadableIFallback(v) || String(v))).join("\n") : getReadableIFallback(parsed);
-  return getReadableIFallback(reply) || responseText;
-};
-
-const InteractiveMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
-  const isDark = useThemeStore((state) => state.isDark);
-  const colors = useThemeStore((state) => state.colors);
-
-  const interactive = getInteractivePayload(message);
-  const type = String(interactive?.type || (message as any).interactive_type || (message as any).message?.interactive?.type || "").toLowerCase();
-  const reply = interactive?.button_reply || interactive?.list_reply || interactive?.nfm_reply || (message as any).message?.interactive?.button_reply || (message as any).message?.interactive?.list_reply || (message as any).message?.interactive?.nfm_reply;
-  if (reply && (type === "button_reply" || type === "list_reply" || type === "nfm_reply")) {
-    return <Bubble message={message}><RichText text={getIResponseText(reply) || "Interactive response"} isOutgoing={message.isOutgoing} /></Bubble>;
-  }
-  const headerObj = interactive?.header || (message as any).message?.interactive?.header || null;
-  const body = String(message.content || interactive?.body?.text || interactive?.body || interactive?.text || interactive?.nfm_reply?.body || interactive?.nfm_reply?.name || "");
-  const headerText = typeof headerObj === "string" ? headerObj : headerObj?.text || "";
-  const footer = String(interactive?.footer?.text || interactive?.footer || "");
-  const action = interactive?.action || {};
-  const buttons = asArray<any>(action?.buttons || interactive?.buttons || action?.button);
-  const rows = asArray<any>(action?.sections).flatMap((s: any) => asArray<any>(s?.rows));
-  const ctaLabel = action?.parameters?.display_text || action?.button?.text || action?.name;
-  const ctaUrl = action?.parameters?.url || action?.url;
-  const isAddrReq = type === "address_message" || type === "location_request_message" || type === "nfm_reply";
-  const fallback = body || getReadableIFallback(interactive) || getReadableIFallback((message as any).message?.interactive) || ("Interactive message" + (type ? ": " + type : ""));
-  const [modal, setModal] = useState(false);
-  const headerImageUrl = headerObj?.image?.url || headerObj?.image?.link || headerObj?.image;
-
-  return (
-    <Bubble message={message} wide>
-      <View 
-        style={{
-          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
-          borderColor: colors.divider,
-          borderWidth: 1,
-        }}
-        className="rounded-xl p-3 min-w-[250px]"
-      >
-        {headerImageUrl && (
-          <>
-            <Pressable onPress={() => setModal(true)} className="active:opacity-90">
-              <Image
-                source={{ uri: headerImageUrl }}
-                className="w-full h-32 rounded-lg mb-3"
-                contentFit="cover"
-                onError={() => {}}
-              />
-            </Pressable>
-            <FullscreenMediaModal
-              visible={modal}
-              onClose={() => setModal(false)}
-              mediaUrl={headerImageUrl}
-              type="image"
-              message={message}
-            />
-          </>
-        )}
-        {headerText ? <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700", marginBottom: 4 }}>{headerText}</Text> : null}
-        <RichText text={fallback} isOutgoing={message.isOutgoing} />
-        {footer ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 8 }}>{footer}</Text> : null}
-        {isAddrReq && message.isOutgoing && (
-          <View className="mt-2 bg-[#25D366] rounded-lg py-2 flex-row items-center justify-center gap-2">
-            <Icon name="place" size={16} color="#fff" />
-            <Text className="text-xs font-bold text-white">Provide Address</Text>
-          </View>
-        )}
-        {isAddrReq && !message.isOutgoing && <ActionChip label="Address received" />}
-        {ctaLabel && <ActionChip label={String(ctaLabel)} href={ctaUrl} />}
-        {buttons.map((btn: any, idx: number) => <ActionChip key={idx} label={btn?.reply?.title || btn?.title || btn?.text || "Option"} />)}
-        {rows.slice(0, 8).map((row: any, idx: number) => (
-          <View 
-            key={idx} 
-            style={{
-              backgroundColor: isDark ? "#121d2b" : "#ffffff",
-              borderColor: colors.divider,
-              borderWidth: 1,
-            }}
-            className="mt-2 p-2 rounded-lg flex-row gap-2 items-start"
-          >
-            <Icon name="list" size={14} color={colors.primary} />
-            <View className="flex-1">
-              <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>{row?.title || row?.id || "List option"}</Text>
-              {row?.description ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }} numberOfLines={2}>{row.description}</Text> : null}
-            </View>
-          </View>
-        ))}
-      </View>
-    </Bubble>
-  );
-});
-
-const ButtonMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
-  const colors = useThemeStore((state) => state.colors);
-  const raw = (message as any).message?.button || (message as any).button || {};
-  const text = message.content || raw?.text || raw?.payload || "Button response";
-
-  return (
-    <Bubble message={message}>
-      <ReplyPreview message={message} />
-      <View className="flex-row items-center gap-2">
-        <Icon name="reply" size={14} color={colors.primary} />
-        <RichText text={text} isOutgoing={message.isOutgoing} />
-      </View>
-    </Bubble>
-  );
-});
-
-const OrderMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
-  const colors = useThemeStore((state) => state.colors);
-  const isDark = useThemeStore((state) => state.isDark);
-
-  const order = (message as any).order || (message as any).message?.order || getMediaPayload(message);
-  const items = asArray<any>(order?.product_items || order?.items);
-
-  return (
-    <Bubble message={message} wide>
-      <View 
-        style={{
-          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
-          borderColor: isDark ? "rgba(16, 185, 129, 0.3)" : "rgba(16, 185, 129, 0.2)",
-          borderWidth: 1,
-        }}
-        className="rounded-xl p-3 min-w-[250px]"
-      >
-        <View className="flex-row items-center gap-2 mb-2">
-          <Icon name="shopping-cart" size={16} color={isDark ? "#34d399" : "#059669"} />
-          <Text style={{ color: isDark ? "#34d399" : "#059669", fontWeight: "700", fontSize: 14 }}>Order</Text>
-        </View>
-        {items.slice(0, 6).map((item: any, idx: number) => (
-          <View 
-            key={idx} 
-            style={{ borderBottomColor: colors.divider, borderBottomWidth: 1 }}
-            className="flex-row justify-between py-1"
-          >
-            <Text style={{ color: colors.onSurface, fontSize: 12 }} className="flex-1 mr-3" numberOfLines={1}>{item?.name || item?.product_retailer_id || "Product"}</Text>
-            <Text style={{ color: colors.outline, fontSize: 12, fontWeight: "700" }}>x{item?.quantity || 1}</Text>
-          </View>
-        ))}
-        {items.length === 0 && <RichText text={message.content || "Order details unavailable"} muted isOutgoing={message.isOutgoing} />}
-      </View>
-    </Bubble>
-  );
-});
 
 const joinName = (...parts: unknown[]) => parts.map(p => String(p || "").trim()).filter(Boolean).join(" ");
 const getContactName = (c: any): string => {
@@ -1162,6 +893,315 @@ const ContactsMessage = React.memo(({ message }: { message: NormalizedChatMessag
   );
 });
 
+const TemplateHeader = React.memo(({ message, header }: { message: NormalizedChatMessage; header: any }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
+  const hm = getTemplateHeaderMedia(header);
+  const resolved = useMessageMedia({
+    mediaId: hm.id || message.mediaId,
+    messageType: String(hm.type).toLowerCase() || message.type,
+    chatId: message.chatId,
+    directUrl: hm.url || message.mediaUrl,
+    phoneNumberId: message.accountId,
+    autoLoad: false,
+  });
+  const [modal, setModal] = useState(false);
+
+  if (hm.type === "IMAGE") {
+    if (resolved.loading) return <View className="w-full h-32 rounded-lg bg-surface-container-lowest items-center justify-center mb-3"><ActivityIndicator size="small" color={colors.primary} /></View>;
+    if (resolved.url) return (
+      <>
+        <Pressable onPress={() => setModal(true)} className="active:opacity-90">
+          <Image
+            source={{ uri: resolved.url }}
+            style={{ width: 250, aspectRatio: 1, borderRadius: 12, maxHeight: 650 }}
+            className="mb-3"
+            contentFit="cover"
+            onError={() => {}}
+          />
+        </Pressable>
+        <FullscreenMediaModal
+          visible={modal}
+          onClose={() => setModal(false)}
+          mediaUrl={resolved.url}
+          type="image"
+          message={message}
+        />
+      </>
+    );
+    return (
+      <Pressable 
+        onPress={resolved.loadMedia} 
+        style={{ 
+          backgroundColor: isDark ? "rgba(0,0,0,0.3)" : "rgba(0,50,107,0.05)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="w-full h-28 rounded-lg mb-3 items-center justify-center active:opacity-80"
+      >
+        <Icon name="refresh" size={24} color={colors.primary} />
+        <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600", marginTop: 4 }}>Tap to load header image</Text>
+      </Pressable>
+    );
+  }
+  if (hm.type === "VIDEO") {
+    const videoUrl = resolved.url || hm.url || message.mediaUrl;
+    return (
+      <>
+        <Pressable onPress={() => videoUrl ? setModal(true) : resolved.loadMedia()} className="active:opacity-90">
+          <View className="w-full h-32 rounded-lg bg-black mb-3 items-center justify-center">
+            <Icon name="play-circle-filled" size={40} color="#fff" />
+          </View>
+        </Pressable>
+        {videoUrl && (
+          <FullscreenMediaModal
+            visible={modal}
+            onClose={() => setModal(false)}
+            mediaUrl={videoUrl}
+            type="video"
+            message={message}
+          />
+        )}
+      </>
+    );
+  }
+  if (hm.type === "DOCUMENT") return (
+    <View 
+      style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#ffffff", borderColor: colors.divider, borderWidth: 1 }}
+      className="flex-row items-center gap-2 rounded-lg p-2 mb-3"
+    >
+      <Icon name="description" size={18} color="#ef4444" />
+      <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }} className="truncate flex-1" numberOfLines={1}>{hm.filename || "Document"}</Text>
+    </View>
+  );
+  if (hm.type === "LOCATION" && (hm as any).latitude && (hm as any).longitude) return (
+    <View 
+      style={{ backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "#ffffff", borderColor: colors.divider, borderWidth: 1 }}
+      className="w-full h-24 rounded-lg mb-3 items-center justify-center gap-1"
+    >
+      <Icon name="place" size={28} color="#0284c7" />
+      <Text style={{ color: colors.outline, fontSize: 12, fontWeight: "600" }}>{(hm as any).latitude}, {(hm as any).longitude}</Text>
+    </View>
+  );
+  if (hm.text) return <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700", marginBottom: 8 }}>{hm.text}</Text>;
+  return null;
+});
+
+const TemplateMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
+  const template = getTemplatePayload(message);
+  const components = asArray<any>(template?.savedContent?.template?.components || template?.components);
+  const header = components.find((c: any) => String(c?.type).toLowerCase() === "header");
+  const body = components.find((c: any) => String(c?.type).toLowerCase() === "body");
+  const footer = components.find((c: any) => String(c?.type).toLowerCase() === "footer");
+  const btnComp = components.find((c: any) => ["button", "buttons"].includes(String(c?.type).toLowerCase()));
+  const carousel = components.find((c: any) => String(c?.type).toLowerCase() === "carousel");
+  const buttons = asArray<any>(btnComp?.buttons?.length ? btnComp.buttons : btnComp ? [btnComp] : []);
+  const title = (message as any).templateTitle || (message as any).templateName || template?.name || "Template";
+  const bodyText = message.content || body?.text || body?.parameters?.map?.((p: any) => p?.text).filter(Boolean).join(" ") || title;
+  const footerText = footer?.text || template?.footer || "";
+
+  return (
+    <Bubble message={message} wide>
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl p-3 min-w-[250px]"
+      >
+        {header && <TemplateHeader message={message} header={header} />}
+        <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700" }}>{title}</Text>
+        {bodyText ? <RichText text={bodyText} muted isOutgoing={message.isOutgoing} /> : null}
+        {footerText ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 8 }}>{footerText}</Text> : null}
+        {carousel?.cards?.length ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3 -mx-1">
+            {(carousel.cards as any[]).map((card: any, ci: number) => {
+              const cc = asArray<any>(card.components);
+              const ch = cc.find((c: any) => String(c?.type).toLowerCase() === "header");
+              const cb = cc.find((c: any) => String(c?.type).toLowerCase() === "body");
+              const cbtn = asArray<any>(cc.find((c: any) => String(c?.type).toLowerCase() === "buttons")?.buttons);
+              return (
+                <View 
+                  key={ci} 
+                  style={{
+                    backgroundColor: isDark ? "#121d2b" : "#ffffff",
+                    borderColor: colors.divider,
+                    borderWidth: 1,
+                  }}
+                  className="w-52 mr-2 rounded-xl overflow-hidden shadow-xs"
+                >
+                  {ch && <TemplateHeader message={message} header={ch} />}
+                  <View className="p-3">
+                    {cb?.text && <RichText text={cb.text} muted isOutgoing={message.isOutgoing} />}
+                    {cbtn.map((btn: any, bi: number) => (
+                      <ActionChip key={bi} label={btn.text || "Action"} href={btn.url} />
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+        {buttons.map((btn: any, idx: number) => {
+          const btnText = btn?.text || btn?.reply?.title || "Action";
+          const btnUrl = btn?.url || (btn?.type === "URL" ? btn?.url : undefined);
+          return <ActionChip key={idx} label={btnText} href={btnUrl} />;
+        })}
+      </View>
+    </Bubble>
+  );
+});
+
+const InteractiveMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = useThemeStore((state) => state.colors);
+
+  const interactive = getInteractivePayload(message);
+  const rawAction = interactive?.action || {};
+  const buttons = asArray<any>(rawAction.buttons);
+  const sections = asArray<any>(rawAction.sections);
+  const rows = sections.flatMap((s: any) => asArray<any>(s.rows));
+  const header = interactive?.header || {};
+  const body = interactive?.body || {};
+  const footer = interactive?.footer?.text || "";
+
+  const headerText = header.text || "";
+  const headerImageUrl = header.image?.link || header.image?.url;
+  const isAddrReq = String(rawAction.name || "").toLowerCase() === "address_message";
+  const ctaUrl = rawAction.parameters?.url;
+  const ctaLabel = rawAction.parameters?.display_text;
+  const fallback = body.text || message.content || "Interactive message";
+
+  const [modal, setModal] = useState(false);
+
+  return (
+    <Bubble message={message} wide>
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl p-3 min-w-[250px]"
+      >
+        {headerImageUrl && (
+          <>
+            <Pressable onPress={() => setModal(true)} className="active:opacity-90">
+              <Image
+                source={{ uri: headerImageUrl }}
+                style={{ width: "100%", height: 140, borderRadius: 8, marginBottom: 8 }}
+                contentFit="cover"
+                onError={() => {}}
+              />
+            </Pressable>
+            <FullscreenMediaModal
+              visible={modal}
+              onClose={() => setModal(false)}
+              mediaUrl={headerImageUrl}
+              type="image"
+              message={message}
+            />
+          </>
+        )}
+        {headerText ? <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700", marginBottom: 4 }}>{headerText}</Text> : null}
+        <RichText text={fallback} isOutgoing={message.isOutgoing} />
+        {footer ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 8 }}>{footer}</Text> : null}
+        {isAddrReq && message.isOutgoing && (
+          <View className="mt-2 bg-[#25D366] rounded-lg py-2 flex-row items-center justify-center gap-2">
+            <Icon name="place" size={16} color="#fff" />
+            <Text className="text-xs font-bold text-white">Provide Address</Text>
+          </View>
+        )}
+        {isAddrReq && !message.isOutgoing && <ActionChip label="Address received" />}
+        {ctaLabel && <ActionChip label={String(ctaLabel)} href={ctaUrl} />}
+        {buttons.map((btn: any, idx: number) => <ActionChip key={idx} label={btn?.reply?.title || btn?.title || btn?.text || "Option"} />)}
+        {rows.slice(0, 8).map((row: any, idx: number) => (
+          <View 
+            key={idx} 
+            style={{
+              backgroundColor: isDark ? "#121d2b" : "#ffffff",
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }}
+            className="mt-2 p-2 rounded-lg flex-row gap-2 items-start"
+          >
+            <Icon name="list" size={14} color={colors.primary} />
+            <View className="flex-1">
+              <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }} numberOfLines={1}>{row?.title || row?.id || "List option"}</Text>
+              {row?.description ? <Text style={{ color: colors.outline, fontSize: 10, marginTop: 2 }} numberOfLines={2}>{row.description}</Text> : null}
+            </View>
+          </View>
+        ))}
+      </View>
+    </Bubble>
+  );
+});
+
+const ButtonMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const colors = useThemeStore((state) => state.colors);
+  const raw = (message as any).message?.button || (message as any).button || {};
+  const text = message.content || raw?.text || raw?.payload || "Button response";
+
+  return (
+    <Bubble message={message}>
+      <ReplyPreview message={message} />
+      <View className="flex-row items-center gap-2">
+        <Icon name="reply" size={14} color={colors.primary} />
+        <RichText text={text} isOutgoing={message.isOutgoing} />
+      </View>
+    </Bubble>
+  );
+});
+
+const OrderMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const colors = useThemeStore((state) => state.colors);
+  const isDark = useThemeStore((state) => state.isDark);
+
+  const order = (message as any).order || (message as any).message?.order || getMediaPayload(message);
+  const items = asArray<any>(order?.product_items);
+  const title = (message as any).title || "Order Details";
+
+  return (
+    <Bubble message={message} wide>
+      <View 
+        style={{
+          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.75)",
+          borderColor: colors.divider,
+          borderWidth: 1,
+        }}
+        className="rounded-xl p-3 min-w-[240px]"
+      >
+        <View className="flex-row items-center gap-2 mb-2">
+          <Icon name="shopping-bag" size={16} color={colors.primary} />
+          <Text style={{ color: colors.onSurface, fontSize: 14, fontWeight: "700" }}>{title}</Text>
+        </View>
+        {items.map((it: any, idx: number) => (
+          <View 
+            key={idx} 
+            style={{
+              backgroundColor: isDark ? "#121d2b" : "#ffffff",
+              borderColor: colors.divider,
+              borderWidth: 1,
+            }}
+            className="p-2 rounded-lg mb-1 flex-row justify-between items-center"
+          >
+            <View className="flex-1">
+              <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }}>{it.product_retailer_id || it.name || "Item"}</Text>
+              <Text style={{ color: colors.outline, fontSize: 10 }}>Qty: {it.quantity || 1}</Text>
+            </View>
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>{it.item_price || it.price ? `₹${it.item_price || it.price}` : ""}</Text>
+          </View>
+        ))}
+      </View>
+    </Bubble>
+  );
+});
+
 const LocationMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
@@ -1212,6 +1252,7 @@ const LocationMessage = React.memo(({ message }: { message: NormalizedChatMessag
 });
 
 const StickerMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => {
+  const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
 
   const media = useMessageMedia({
@@ -1220,21 +1261,30 @@ const StickerMessage = React.memo(({ message }: { message: NormalizedChatMessage
     chatId: message.chatId,
     directUrl: message.mediaUrl,
     phoneNumberId: message.accountId,
+    autoLoad: false,
   });
 
   return (
     <Bubble message={message}>
       {media.loading ? (
-        <View className="w-32 h-32 items-center justify-center">
+        <View className="w-28 h-28 items-center justify-center">
           <ActivityIndicator size="small" color={colors.primary} />
         </View>
       ) : media.url ? (
         <Image source={{ uri: media.url }} style={{ width: 128, height: 128 }} className="bg-transparent" contentFit="contain" />
       ) : (
-        <View className="flex-row items-center gap-2 py-1">
-          <Icon name="sentiment-satisfied" size={20} color={colors.outline} />
-          <Text style={{ color: colors.outline, fontSize: 13.5, fontWeight: "600" }}>Sticker unavailable</Text>
-        </View>
+        <Pressable 
+          onPress={media.loadMedia} 
+          style={{ 
+            backgroundColor: isDark ? "rgba(0,0,0,0.25)" : "rgba(0,50,107,0.05)",
+            borderColor: colors.divider,
+            borderWidth: 1,
+          }}
+          className="w-28 h-28 rounded-xl items-center justify-center active:opacity-80 gap-1.5 p-2"
+        >
+          <Icon name="refresh" size={22} color={colors.primary} />
+          <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "600", textAlign: "center" }}>Tap to load sticker</Text>
+        </Pressable>
       )}
     </Bubble>
   );

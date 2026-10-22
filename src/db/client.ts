@@ -171,6 +171,104 @@ export async function setMediaCache(key: string, dataUrl: string): Promise<void>
   } catch (_) { }
 }
 
+export async function upsertChatBatch(chatList: Array<typeof schema.chats.$inferInsert>): Promise<void> {
+  if (!chatList || chatList.length === 0) return;
+  try {
+    await expoDb.withTransactionAsync(async () => {
+      for (const chat of chatList) {
+        await db
+          .insert(schema.chats)
+          .values(chat)
+          .onConflictDoUpdate({
+            target: schema.chats.id,
+            set: {
+              name: chat.name,
+              phoneNumber: chat.phoneNumber,
+              channel: chat.channel,
+              lastMessage: chat.lastMessage,
+              unreadCount: chat.unreadCount,
+              avatar: chat.avatar,
+              pinned: chat.pinned,
+              isStarred: chat.isStarred,
+              isOpen: chat.isOpen,
+              assignedToName: chat.assignedToName,
+              leadStage: chat.leadStage,
+              socialAccountId: chat.socialAccountId,
+              departmentId: chat.departmentId,
+              quickAssistKeyword: chat.quickAssistKeyword,
+              campaignId: chat.campaignId,
+              updatedAt: chat.updatedAt,
+              accountId: chat.accountId,
+              username: chat.username,
+              isBlocked: chat.isBlocked,
+              isCampaignChat: chat.isCampaignChat,
+              rawJson: chat.rawJson,
+            },
+          });
+      }
+    });
+  } catch (err) {
+    console.error('Failed to upsertChatBatch:', err);
+  }
+}
+
+export async function upsertMessageBatch(msgList: Array<typeof schema.messages.$inferInsert>): Promise<void> {
+  if (!msgList || msgList.length === 0) return;
+  try {
+    await expoDb.withTransactionAsync(async () => {
+      for (const msg of msgList) {
+        await db
+          .insert(schema.messages)
+          .values(msg)
+          .onConflictDoUpdate({
+            target: schema.messages.id,
+            set: {
+              text: msg.text,
+              sender: msg.sender,
+              isOutgoing: msg.isOutgoing,
+              type: msg.type,
+              mediaUrl: msg.mediaUrl,
+              status: msg.status,
+              timestamp: msg.timestamp,
+              readReceipt: msg.readReceipt,
+              isImage: msg.isImage,
+              rawJson: msg.rawJson,
+            },
+          });
+      }
+    });
+  } catch (err) {
+    console.error('Failed to upsertMessageBatch:', err);
+  }
+}
+
+export async function upsertContactBatch(contactList: Array<typeof schema.contacts.$inferInsert>): Promise<void> {
+  if (!contactList || contactList.length === 0) return;
+  try {
+    await expoDb.withTransactionAsync(async () => {
+      for (const contact of contactList) {
+        await db
+          .insert(schema.contacts)
+          .values(contact)
+          .onConflictDoUpdate({
+            target: schema.contacts.id,
+            set: {
+              name: contact.name,
+              username: contact.username,
+              phone: contact.phone,
+              channel: contact.channel,
+              status: contact.status,
+              subStatus: contact.subStatus,
+              lastActivity: contact.lastActivity,
+            },
+          });
+      }
+    });
+  } catch (err) {
+    console.error('Failed to upsertContactBatch:', err);
+  }
+}
+
 export async function prefetchChatMedia(chatId: string) {
   try {
     const messages = await expoDb.getAllAsync<{ id: string, media_url: string, raw_json: string, type: string }>(

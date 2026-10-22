@@ -8,20 +8,21 @@ import {
   RefreshControl,
   ImageBackground,
   StyleSheet,
-  ActivityIndicator,
-  InteractionManager
+  ActivityIndicator
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Text } from "../../components/ui/Text";
 import { Icon } from "../../components/ui/Icon";
 import { Avatar } from "../../components/ui/Avatar";
-import { ChatInput } from "../../components/ui/ChatInput";
+import { ChatInput, ReplyingToMessage } from "../../components/ui/ChatInput";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
-import { useSyncStore, Message } from "../../store/syncStore";
+import { useSyncStore, Message, extractMessages, mapApiMessage } from "../../store/syncStore";
 import API from "../../config/axios";
+import { upsertMessageBatch } from "../../db/client";
 import { MessageRenderer } from "../../components/whatsapp/MessageRenderer";
+import { SwipeToReplyWrapper } from "../../components/whatsapp/SwipeToReplyWrapper";
 import { normalizeChatMessage } from "../../lib/messageUtils";
 import imagePaths from "../../constants/imagePaths";
 import { TemplatesModal } from "../../components/ui/TemplatesModal";
@@ -30,9 +31,32 @@ import { useThemeStore } from "../../store/themeStore";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const MessageBubble = React.memo(({ item, accountId }: { item: Message, accountId: string }) => {
-  const normalized = normalizeChatMessage(item);
-  return <MessageRenderer message={{ ...normalized, accountId: normalized.accountId || accountId }} />;
+const MessageBubble = React.memo(({
+  item,
+  accountId,
+  onSwipeReply,
+}: {
+  item: Message;
+  accountId: string;
+  onSwipeReply: (msg: Message) => void;
+}) => {
+  const normalized = useMemo(() => {
+    const norm = normalizeChatMessage(item);
+    if (!norm.accountId && accountId) {
+      norm.accountId = accountId;
+    }
+    return norm;
+  }, [item.id, item.rawJson, item.status, item.text, item.type, item.mediaUrl, item.readReceipt, item.isOutgoing, accountId]);
+
+  const handleReply = useCallback(() => {
+    onSwipeReply(item);
+  }, [item, onSwipeReply]);
+
+  return (
+    <SwipeToReplyWrapper onSwipeReply={handleReply} isOutgoing={normalized.isOutgoing}>
+      <MessageRenderer message={normalized} />
+    </SwipeToReplyWrapper>
+  );
 });
 
 const DateSeparator = React.memo(({ dateStr }: { dateStr: string }) => {
@@ -40,26 +64,42 @@ const DateSeparator = React.memo(({ dateStr }: { dateStr: string }) => {
   const colors = useThemeStore((state) => state.colors);
   return (
     <View className="align-center items-center my-3 py-1">
-      <View 
+      <View
         style={{
-          backgroundColor: isDark ? "#172435" : "#e1f3ff",
+          backgroundColor: isDark ? "rgba(30, 41, 59, 0.85)" : "rgba(241, 245, 249, 0.95)",
           borderColor: colors.divider,
           borderWidth: 1,
         }}
-        className="rounded-full px-3.5 py-1.5 shadow-xs"
+        className="px-3 py-1 rounded-md shadow-sm"
       >
-        <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }} className="uppercase tracking-wider">{dateStr}</Text>
+        <Text style={{ color: colors.onSurfaceVariant }} className="text-[11px] font-semibold tracking-wider uppercase">
+          {dateStr}
+        </Text>
       </View>
     </View>
   );
 });
+
+function getSeparatorDateStr(d: Date, todayStr: string, yesterdayStr: string): string {
+  const dateStr = d.toDateString();
+  if (dateStr === todayStr) return "Today";
+  if (dateStr === yesterdayStr) return "Yesterday";
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
 
 const EMPTY_MESSAGES: Message[] = [];
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ChatScreen() {
-  const params = useLocalSearchParams<{ id: string; name?: string; avatar?: string; accountId?: string; channel?: string }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    name?: string;
+    avatar?: string;
+    accountId?: string;
+    channel?: string;
+    phoneNumber?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -71,89 +111,94 @@ export default function ChatScreen() {
   const chatId = params.id as string;
 
   const messages = useSyncStore((state) => state.messagesByChat[chatId] || EMPTY_MESSAGES);
-  const chat = useSyncStore(useCallback((state) => state.chats.find((c) => c.id === chatId), [chatId]));
+  const currentChat = useSyncStore((state) => state.chats.find((c) => c.id === chatId));
+  const isChatOpen = currentChat?.isOpen ?? false;
   const loadMessages = useSyncStore((state) => state.loadMessages);
   const addLocalMessage = useSyncStore((state) => state.addLocalMessage);
 
-  const chatName = params.name || chat?.name || chat?.username || 'Chat';
-  const chatAvatar = params.avatar || chat?.avatar || chatName.charAt(0).toUpperCase();
-  const chatAccountId = useMemo(() => {
-    if (params.accountId) return params.accountId;
-    if (chat?.accountId) return chat.accountId;
-    if (chat?.socialAccountId) return chat.socialAccountId;
-    if (chat?.rawJson) {
-      try {
-        const parsed = JSON.parse(chat.rawJson);
-        const pid = parsed.phone_number_id || parsed.phoneNumberId || parsed.accountId || parsed.chatAccountId || parsed.socialAccountId;
-        if (pid) return String(pid);
-      } catch (_) {}
-    }
-    const cachedAccsStr = storage.getString('cached_social_accounts');
-    if (cachedAccsStr) {
-      try {
-        const accs = JSON.parse(cachedAccsStr);
-        const wa = accs.find((a: any) => String(a.channel).toLowerCase() === 'whatsapp' && (a.phone_number_id || a.chatAccountId || a.accountId));
-        if (wa) return String(wa.phone_number_id || wa.chatAccountId || wa.accountId);
-      } catch (_) {}
-    }
-    return "";
-  }, [params.accountId, chat]);
+  const chatName = params.name || currentChat?.name || 'Chat';
+  const chatAvatar = params.avatar || currentChat?.avatar || chatName.charAt(0).toUpperCase();
+  const chatAccountId = params.accountId || currentChat?.accountId || "";
+  const chatPhoneNumber = params.phoneNumber || currentChat?.phoneNumber || "";
+  const chatChannel = params.channel || currentChat?.channel || "whatsapp";
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ReplyingToMessage | null>(null);
+  const hasUserScrolled = useRef(false);
+
+  const handleSwipeReply = useCallback((msg: Message) => {
+    const norm = normalizeChatMessage(msg);
+    const sender = norm.isOutgoing ? "You" : (chatName || "Contact");
+    const text = norm.content || norm.text || "";
+    const whatsappMsgId = norm.message?.id || norm.messageId || (norm as any).wamid || norm._id || msg.id;
+
+    setReplyingTo({
+      id: whatsappMsgId,
+      messageId: whatsappMsgId,
+      messageOgId: whatsappMsgId,
+      senderName: sender,
+      text,
+      type: norm.type || "text",
+      mediaUrl: norm.mediaUrl || undefined,
+      fileName: norm.mediaFileName || (norm.type === "image" ? "image.jpg" : undefined),
+      uploaded_id: norm.mediaId || undefined,
+      isOutgoing: norm.isOutgoing,
+    });
+  }, [chatName]);
+
+  const handleCancelReply = useCallback(() => {
+    setReplyingTo(null);
+  }, []);
 
   const fetchMessagesFromApi = useCallback(async () => {
     try {
-      const res = await API.get(`/messages/${chatId}/sync`, { params: { direction: 'older', limit: 50 } });
-      const rawMsgs: any[] = Array.isArray(res.data?.data) ? res.data.data
-        : Array.isArray(res.data) ? res.data : [];
+      const res = await API.get(`/messages/${chatId}`, { params: { page: 1 } });
+      const rawMsgs = extractMessages(res.data);
 
       if (rawMsgs.length === 0) {
         setHasMore(false);
         return;
       }
 
-      const { upsertMessageBatch } = require('../../db/client');
-      const messagesToUpsert = rawMsgs.map((raw) => ({
-        id: String(raw.id || raw._id || Date.now() + Math.random()),
-        chatId,
-        content: raw.text || raw.content || raw.message?.text?.body || raw.payload?.text?.body || raw.caption || '',
-        type: raw.type || 'text',
-        isOutgoing: Boolean(raw.isOutgoing ?? (raw.direction === 'outgoing' || raw.fromMe)),
-        status: raw.status || 'sent',
-        timestamp: raw.createdAt ? new Date(raw.createdAt).getTime() : Date.now(),
-        mediaUrl: raw.mediaUrl || raw.url || null,
-        rawJson: JSON.stringify(raw),
-      }));
-
+      const messagesToUpsert = rawMsgs.map((raw) => mapApiMessage(raw, chatId));
       await upsertMessageBatch(messagesToUpsert);
       await useSyncStore.getState().loadMessages(chatId);
-      if (rawMsgs.length < 50) setHasMore(false);
+      setPage(1);
+      if (rawMsgs.length < 15) setHasMore(false);
     } catch (_) { }
   }, [chatId]);
 
   useEffect(() => {
     let cancelled = false;
-    // 1. Immediately load cached messages from local SQLite (0ms UI latency)
-    loadMessages(chatId).then(() => {
-      if (!cancelled) {
-        useSyncStore.getState().resetUnreadCount(chatId);
-      }
-    });
+    useSyncStore.getState().setActiveChatId(chatId);
 
-    // 2. Defer heavy network API sync and media prefetching until after screen transition animation finishes
-    const task = InteractionManager.runAfterInteractions(() => {
+    // 1. Immediately query cached messages from local SQLite (0ms latency for synced chats)
+    loadMessages(chatId).then(async (localCount) => {
       if (cancelled) return;
-      fetchMessagesFromApi();
-      try {
-        const { prefetchChatMedia } = require('../../db/client');
-        prefetchChatMedia(chatId);
-      } catch (_) { }
+
+      setTimeout(() => {
+        if (!cancelled) {
+          useSyncStore.getState().resetUnreadCount(chatId);
+        }
+      }, 0);
+
+      // 2. If chat has not been synced locally yet (e.g. opened from search or bottom of inbox), fetch page 1 from server
+      if (localCount === 0) {
+        setInitialLoading(true);
+        try {
+          await fetchMessagesFromApi();
+        } finally {
+          if (!cancelled) setInitialLoading(false);
+        }
+      }
     });
 
     return () => {
       cancelled = true;
-      task.cancel();
+      useSyncStore.getState().setActiveChatId(null);
     };
   }, [chatId, loadMessages, fetchMessagesFromApi]);
 
@@ -166,89 +211,57 @@ export default function ChatScreen() {
   }, []);
 
   const loadMoreMessages = useCallback(async () => {
-    if (isLoadingMore || !hasMore || messages.length === 0) return;
+    // Only fetch when user has explicitly scrolled up
+    if (!hasUserScrolled.current || isLoadingMore || !hasMore || messages.length === 0) return;
     setIsLoadingMore(true);
     try {
-      const oldestMsg = messages[messages.length - 1];
-      const res = await API.get(`/messages/${chatId}/sync`, {
-        params: {
-          direction: 'older',
-          limit: 35,
-          cursorCreatedAt: oldestMsg.timestamp,
-          cursorId: oldestMsg.id,
-        },
-      });
+      // 1. Check local SQLite database first for instant load
+      const countLoaded = await useSyncStore.getState().loadOlderMessages(chatId, 40);
+      if (countLoaded > 0) {
+        setIsLoadingMore(false);
+        return;
+      }
 
-      const rawMsgs: any[] = Array.isArray(res.data?.data) ? res.data.data
-        : Array.isArray(res.data) ? res.data : [];
+      // 2. Fetch older messages from API using page query param (matching eazycrm-frontend)
+      const nextPage = page + 1;
+      const res = await API.get(`/messages/${chatId}`, {
+        params: { page: nextPage },
+      });
+      const rawMsgs = extractMessages(res.data);
 
       if (rawMsgs.length === 0) {
         setHasMore(false);
       } else {
-        const { db, expoDb } = require('../../db/client');
-        const { messages: messagesTable } = require('../../db/schema');
-        await expoDb.withTransactionAsync(async () => {
-          for (const m of rawMsgs) {
-            const msgId = String(m._id || m.id || Math.random().toString(36));
-            const ts = m.createdAt || m.timestamp || new Date().toISOString();
-            const type = m.message_type || m.type || m.message?.type || 'text';
-            const text = m.content || m.text || m.body || m.message?.text || m.message?.caption || '';
-            const mediaUrl = m.mediaUrl || m.media_url || m.message?.image?.url || m.message?.video?.url || m.message?.audio?.url || m.message?.document?.url || null;
-            const isOutgoing = m.isOutgoing === true || m.fromCrm === true || String(m.flag || '').toLowerCase() === 'outgoing';
-            await db.insert(messagesTable).values({
-              id: msgId,
-              chatId,
-              text,
-              sender: isOutgoing ? 'You' : (m.senderId || 'Contact'),
-              isOutgoing,
-              type,
-              mediaUrl,
-              status: m.status || 'delivered',
-              timestamp: typeof ts === 'number' ? new Date(ts).toISOString() : String(ts),
-              readReceipt: m.status || null,
-              isImage: type === 'image',
-              rawJson: m ? JSON.stringify(m) : null,
-            }).onConflictDoUpdate({
-              target: messagesTable.id,
-              set: {
-                text,
-                type,
-                mediaUrl,
-                isOutgoing,
-                isImage: type === 'image',
-                status: m.status || 'delivered',
-                readReceipt: m.status || null,
-                rawJson: m ? JSON.stringify(m) : null
-              },
-            });
-          }
-        });
-        await loadMessages(chatId);
+        const messagesToUpsert = rawMsgs.map((raw) => mapApiMessage(raw, chatId));
+        await upsertMessageBatch(messagesToUpsert);
+        useSyncStore.getState().appendOlderMessages(chatId, messagesToUpsert);
+        setPage(nextPage);
+        if (rawMsgs.length < 15) {
+          setHasMore(false);
+        }
       }
     } catch (err) {
       console.warn('[chat] load more failed:', err);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [chatId, messages, isLoadingMore, hasMore]);
+  }, [chatId, messages, isLoadingMore, hasMore, page]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     let isMounted = true;
     const timer = setTimeout(() => {
       if (isMounted) setIsRefreshing(false);
     }, 5000);
 
-    (async () => {
-      try {
-        await fetchMessagesFromApi();
-      } catch (err) {
-        console.warn('[chat] refresh failed:', err);
-      } finally {
-        clearTimeout(timer);
-        if (isMounted) setIsRefreshing(false);
-      }
-    })();
+    try {
+      await fetchMessagesFromApi();
+    } catch (err) {
+      console.warn('[chat] refresh failed:', err);
+    } finally {
+      clearTimeout(timer);
+      if (isMounted) setIsRefreshing(false);
+    }
 
     return () => {
       isMounted = false;
@@ -256,11 +269,22 @@ export default function ChatScreen() {
     };
   }, [fetchMessagesFromApi]);
 
-  const handleSend = (text: string) => addLocalMessage(chatId, text);
+  const handleSend = (text: string, replyTo?: ReplyingToMessage | null) => {
+    addLocalMessage(chatId, text, replyTo);
+    setReplyingTo(null);
+  };
 
   // Group messages by day and insert separator items
   const groupedData = useMemo(() => {
     const list: any[] = [];
+    if (messages.length === 0) return list;
+
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    const yesterdayStr = yest.toDateString();
+
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       list.push(msg);
@@ -270,58 +294,47 @@ export default function ChatScreen() {
       const nextDate = nextMsg ? new Date(nextMsg.timestamp) : null;
 
       if (!nextDate || currentDate.toDateString() !== nextDate.toDateString()) {
-        const formatSeparatorDate = (date: Date): string => {
-          const today = new Date();
-          const yesterday = new Date();
-          yesterday.setDate(today.getDate() - 1);
-          if (date.toDateString() === today.toDateString()) return "Today";
-          if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-          return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-        };
-        list.push({ isDateSeparator: true, dateStr: formatSeparatorDate(currentDate), id: `sep-${msg.id}` });
+        list.push({
+          isDateSeparator: true,
+          dateStr: getSeparatorDateStr(currentDate, todayStr, yesterdayStr),
+          id: `sep-${msg.id}`
+        });
       }
     }
     return list;
   }, [messages]);
 
+  const renderItem = useCallback(({ item }: { item: any }) => {
+    if ('isDateSeparator' in item) {
+      return <DateSeparator dateStr={item.dateStr} />;
+    }
+    return (
+      <MessageBubble
+        item={item}
+        accountId={chatAccountId}
+        onSwipeReply={handleSwipeReply}
+      />
+    );
+  }, [chatAccountId, handleSwipeReply]);
+
   const renderFooter = useCallback(() => {
     if (messages.length === 0) return null;
-    if (!hasMore) {
+    if (isLoadingMore) {
       return (
-        <View className="items-center py-4">
-          <Text className="text-xs text-on-surface-variant/60">All messages loaded</Text>
+        <View className="items-center py-3">
+          <ActivityIndicator size="small" color={colors.primary} />
         </View>
       );
     }
-    return (
-      <View className="items-center py-2">
-        <Pressable
-          onPress={loadMoreMessages}
-          disabled={isLoadingMore}
-          style={({ pressed }) => ({
-            backgroundColor: pressed ? 'rgba(0, 50, 107, 0.08)' : 'transparent',
-            borderColor: 'rgba(0, 50, 107, 0.25)',
-            borderWidth: 1,
-            borderRadius: 20,
-            paddingHorizontal: 16,
-            paddingVertical: 8,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6
-          })}
-        >
-          {isLoadingMore ? (
-            <ActivityIndicator size="small" color="#00326b" />
-          ) : (
-            <>
-              <Icon name="history" size={14} color="#00326b" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#00326b' }}>Load More</Text>
-            </>
-          )}
-        </Pressable>
-      </View>
-    );
-  }, [messages.length, hasMore, isLoadingMore, loadMoreMessages]);
+    if (!hasMore) {
+      return (
+        <View className="items-center py-4">
+          <Text style={{ color: colors.outline, fontSize: 11, fontWeight: "500" }}>Beginning of chat history</Text>
+        </View>
+      );
+    }
+    return null;
+  }, [messages.length, hasMore, isLoadingMore, colors]);
 
   return (
     // We use ImageBackground as the root container to ensure it is behind everything
@@ -335,7 +348,7 @@ export default function ChatScreen() {
 
         {/* Header - slightly translucent so wallpaper peeks through */}
         <View
-          style={{ 
+          style={{
             paddingTop: Math.max(insets.top, 12),
             backgroundColor: isDark ? 'rgba(18, 29, 43, 0.95)' : 'rgba(255, 255, 255, 0.95)',
             borderBottomColor: colors.divider,
@@ -354,7 +367,7 @@ export default function ChatScreen() {
               <Avatar fallback={chatAvatar} size={40} />
               <View>
                 <Text style={{ fontSize: 16.5, fontWeight: '700', color: colors.onSurface }}>{chatName}</Text>
-                {chat?.isOpen && (
+                {isChatOpen && (
                   <Text style={{ fontSize: 12, color: isDark ? "#4ade80" : "#10b981", fontWeight: "600" }}>Open</Text>
                 )}
               </View>
@@ -375,7 +388,12 @@ export default function ChatScreen() {
 
         {/* Message List Area */}
         <View className="flex-1">
-          {messages.length === 0 && !isRefreshing ? (
+          {initialLoading ? (
+            <View className="flex-1 items-center justify-center gap-3">
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={{ color: colors.outline, fontSize: 13, fontWeight: "500" }}>Loading messages…</Text>
+            </View>
+          ) : messages.length === 0 && !isRefreshing ? (
             <View className="flex-1 items-center justify-center gap-3">
               <Icon name="chat-bubble-outline" size={48} color={colors.outline} />
               <Text style={{ color: colors.outline, fontSize: 15, fontWeight: "500" }}>No messages yet</Text>
@@ -386,11 +404,13 @@ export default function ChatScreen() {
               data={groupedData}
               keyExtractor={(item) => item.id}
               inverted
-              initialNumToRender={15}
-              maxToRenderPerBatch={15}
-              windowSize={11}
+              initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={5}
               removeClippedSubviews={Platform.OS === 'android'}
               updateCellsBatchingPeriod={50}
+              onScrollBeginDrag={() => { hasUserScrolled.current = true; }}
+              onMomentumScrollBegin={() => { hasUserScrolled.current = true; }}
               onEndReached={loadMoreMessages}
               onEndReachedThreshold={0.4}
               contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 8 }}
@@ -404,36 +424,35 @@ export default function ChatScreen() {
                   colors={[colors.primary]}
                 />
               }
-              renderItem={({ item }) => {
-                if ('isDateSeparator' in item) {
-                  return <DateSeparator dateStr={item.dateStr} />;
-                }
-                return <MessageBubble item={item} accountId={chatAccountId} />;
-              }}
+              renderItem={renderItem}
             />
           )}
         </View>
 
         {/* Input - bg-surface ensures the input area is solid and readable */}
-        <ChatInput 
-          onSend={handleSend} 
-          insets={insets} 
-          keyboardHeight={keyboardHeight} 
+        <ChatInput
+          onSend={handleSend}
+          insets={insets}
+          keyboardHeight={keyboardHeight}
           onPressTemplates={() => setTemplatesModalVisible(true)}
+          replyingTo={replyingTo}
+          onCancelReply={handleCancelReply}
         />
       </View>
 
-      <TemplatesModal
-        visible={templatesModalVisible}
-        onClose={() => setTemplatesModalVisible(false)}
-        chatAccountId={chatAccountId}
-        chatPhoneNumber={chat?.phoneNumber || ""}
-        chatId={chatId}
-        channel={chat?.channel || "whatsapp"}
-        onSuccess={async (newMsg) => {
-          await useSyncStore.getState().handleRealtimeMessage(newMsg);
-        }}
-      />
+      {templatesModalVisible && (
+        <TemplatesModal
+          visible={templatesModalVisible}
+          onClose={() => setTemplatesModalVisible(false)}
+          chatAccountId={chatAccountId}
+          chatPhoneNumber={chatPhoneNumber}
+          chatId={chatId}
+          channel={chatChannel}
+          onSuccess={async (newMsg) => {
+            await useSyncStore.getState().handleRealtimeMessage(newMsg);
+          }}
+        />
+      )}
     </ImageBackground>
   );
 }

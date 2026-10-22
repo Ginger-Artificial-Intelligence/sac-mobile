@@ -6,7 +6,7 @@ export default function SocketManager() {
   const token = useSyncStore((state) => state.userToken);
   const tenantId = useSyncStore((state) => state.tenantId);
   const isAuthenticated = useSyncStore((state) => state.isAuthenticated);
-  
+
   const handleRealtimeMessage = useSyncStore((state) => state.handleRealtimeMessage);
   const handleRealtimeStatus = useSyncStore((state) => state.handleRealtimeStatus);
 
@@ -28,23 +28,26 @@ export default function SocketManager() {
     };
 
     const onNewMessage = (incoming: any) => {
+      // console.log('🔌 [SOCKET] Received new message:', incoming);
+      // console.dir({ incoming }, { depth: null });
       if (!incoming) return;
-      const msgId = incoming._id || incoming.id || '';
-      const chatId = incoming.chatId || incoming.chat_id || '';
-      const content = incoming.content || incoming.text || '';
-      const createdAt = incoming.createdAt || incoming.timestamp || '';
-      
+      const inner = incoming.message || incoming.payload || incoming;
+      const msgId = inner._id || inner.id || incoming._id || incoming.id || '';
+      const chatId = inner.chatId || inner.chat_id || incoming.chatId || incoming.chat_id || incoming.chatDetails?._id || incoming.chatDetails?.id || '';
+      const content = inner.content || inner.text || incoming.content || incoming.text || '';
+      const createdAt = inner.createdAt || inner.timestamp || incoming.createdAt || incoming.timestamp || '';
+
       const key = msgId || `${chatId}:${createdAt}:${content}`;
       if (processedKeysRef.current.has(key)) return;
       processedKeysRef.current.add(key);
-      
+
       // Bounded LRU cache eviction (O(1) first item deletion)
       if (processedKeysRef.current.size > 2000) {
         const firstKey = processedKeysRef.current.values().next().value;
         if (firstKey) processedKeysRef.current.delete(firstKey);
       }
 
-      console.log('🔌 [SOCKET] Received new message:', msgId);
+      console.log('🔌 [SOCKET] Received new message:', msgId || key);
       handleRealtimeMessage(incoming);
     };
 
@@ -62,6 +65,10 @@ export default function SocketManager() {
         handleRealtimeStatus(update);
       }
     };
+
+    socket.onAny((eventName: string, ...args: any[]) => {
+      console.log('🔌 [SOCKET ANY EVENT]:', eventName, args);
+    });
 
     socket.on('connect', onConnect);
     socket.on('newMessage', onNewMessage);

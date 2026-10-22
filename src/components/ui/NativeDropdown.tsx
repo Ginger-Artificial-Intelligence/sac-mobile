@@ -47,33 +47,45 @@ export function NativeDropdown({
   const handleOpen = () => {
     if (triggerRef.current) {
       triggerRef.current.measureInWindow((x, y, width, height) => {
-        setDropdownPosition({
-          x: x || 0,
-          y: (y || 0) + (height || 0) + 4,
-          width: width || 140,
-        });
-        onRequestOpen();
+        if (typeof x === 'number' && typeof y === 'number') {
+          setDropdownPosition({
+            x: x,
+            y: y + (height || 0) + 4,
+            width: width || 140,
+          });
+        }
       });
-    } else {
-      onRequestOpen();
     }
+    onRequestOpen();
   };
 
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
-  const dropdownWidth = Math.min(Math.max(dropdownPosition.width, 160), screenWidth - 32);
-  const leftPos = Math.min(Math.max(dropdownPosition.x, 16), screenWidth - dropdownWidth - 16);
-  const topPos = Math.min(dropdownPosition.y, screenHeight - 260);
+  const dropdownWidth = Math.min(Math.max(dropdownPosition.width || 0, 220), screenWidth - 32);
+
+  const isRightSide = dropdownPosition.x > screenWidth / 2;
+  const computedLeft = isRightSide
+    ? Math.max(16, (dropdownPosition.x + (dropdownPosition.width || 0)) - dropdownWidth)
+    : Math.min(Math.max(dropdownPosition.x || 16, 16), screenWidth - dropdownWidth - 16);
+
+  const leftPos = dropdownPosition.x > 0 ? computedLeft : screenWidth - dropdownWidth - 16;
+  const topPos = dropdownPosition.y > 0 ? Math.min(dropdownPosition.y, screenHeight - 300) : 64;
 
   return (
     <View ref={triggerRef} style={style} collapsable={false}>
-      <HapticPressable hapticType='light' onPress={handleOpen} style={{ width: '100%', height: '100%' }}>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={handleOpen}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}
+      >
         {trigger}
-      </HapticPressable>
+      </TouchableOpacity>
 
       <Modal
         visible={expanded}
         transparent
+        statusBarTranslucent
         animationType="fade"
         onRequestClose={onDismissRequest}
       >

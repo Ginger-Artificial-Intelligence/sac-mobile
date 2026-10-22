@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { db } from '../db/client';
+import { db, upsertChatBatch, upsertMessageBatch, upsertContactBatch } from '../db/client';
 import { chats as chatsTable, messages as messagesTable, contacts as contactsTable } from '../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, lt } from 'drizzle-orm';
 import { storage, mmkvKeys } from './mmkv';
 import API from '../config/axios';
+import { playNotificationSound } from '../lib/audioNotification';
 
 // ─── Domain Types ────────────────────────────────────────────────────────────
 
@@ -47,6 +48,21 @@ export interface Message {
   rawJson: string | null;
 }
 
+export interface ReplyToContext {
+  id?: string;
+  messageId?: string;
+  senderName?: string;
+  sender?: string;
+  text?: string;
+  content?: string;
+  type?: string;
+  message_type?: string;
+  mediaUrl?: string;
+  fileName?: string;
+  uploaded_id?: string;
+  isOutgoing?: boolean;
+}
+
 export interface Contact {
   id: string;
   name: string;
@@ -60,9 +76,13 @@ export interface Contact {
 
 export interface SyncProgress {
   label: string;
+  step?: number;
+  totalSteps?: number;
   chatsSynced: number;
   totalChats: number;
   messagesSynced: number;
+  totalMessagesToSync?: number;
+  percentage?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -79,15 +99,28 @@ function extractChats(response: any): any[] {
   return [];
 }
 
-/** Robustly extract messages array from any API response shape */
-function extractMessages(response: any): any[] {
-  if (Array.isArray(response?.data)) return response.data;
-  if (Array.isArray(response?.messages)) return response.messages;
-  return [];
+/** Robustly extract and flatten messages array from any API response shape (including date groups) */
+export function extractMessages(response: any): any[] {
+  let list: any[] = [];
+  if (Array.isArray(response?.data?.messages)) list = response.data.messages;
+  else if (Array.isArray(response?.data)) list = response.data;
+  else if (Array.isArray(response?.messages)) list = response.messages;
+  else if (Array.isArray(response)) list = response;
+
+  // Flatten if the array contains date groups { _id: "YYYY-MM-DD", messages: [...] }
+  const flattened: any[] = [];
+  for (const item of list) {
+    if (item && Array.isArray(item.messages)) {
+      flattened.push(...item.messages);
+    } else if (item) {
+      flattened.push(item);
+    }
+  }
+  return flattened;
 }
 
 /** Robustly extract contacts array from any API response shape */
-function extractContacts(response: any): any[] {
+export function extractContacts(response: any): any[] {
   if (Array.isArray(response?.contacts)) return response.contacts;
   if (Array.isArray(response?.data?.contacts)) return response.data.contacts;
   if (Array.isArray(response?.data?.data)) return response.data.data;
@@ -97,20 +130,50 @@ function extractContacts(response: any): any[] {
 }
 
 /** Get cursor for the next page of chats */
-function getNextChatCursor(response: any): string | null {
-  if (response?.pageInfo?.hasNextPage) {
+export function getNextChatCursor(response: any): string | null {
+  if (!response) return null;
+
+  // Stop if explicitly hasMore is false or hasNextPage is false
+  if (response.hasMore === false || response.data?.hasMore === false) return null;
+  if (response.pageInfo?.hasMore === false || response.data?.pageInfo?.hasMore === false) return null;
+  if (response.pageInfo?.hasNextPage === false || response.data?.pageInfo?.hasNextPage === false) return null;
+
+  if (response.pageInfo?.hasNextPage || response.pageInfo?.hasMore) {
     return response.pageInfo.startCursor || response.pageInfo.endCursor || null;
   }
-  return response?.nextCursor || response?.meta?.nextCursor || null;
+  if (response.data?.pageInfo?.hasNextPage || response.data?.pageInfo?.hasMore) {
+    return response.data.pageInfo.startCursor || response.data.pageInfo.endCursor || null;
+  }
+  return response.nextCursor || response.meta?.nextCursor || response.data?.nextCursor || null;
+}
+
+/** Check if API response indicates there are more chats */
+export function checkHasMoreChats(response: any, rawChatsCount?: number, limit?: number): boolean {
+  if (!response) return false;
+
+  // Check explicit hasMore / hasNextPage boolean flags
+  if (response.hasMore === false || response.data?.hasMore === false) return false;
+  if (response.pageInfo?.hasMore === false || response.data?.pageInfo?.hasMore === false) return false;
+  if (response.pageInfo?.hasNextPage === false || response.data?.pageInfo?.hasNextPage === false) return false;
+
+  if (response.hasMore === true || response.data?.hasMore === true) return true;
+  if (response.pageInfo?.hasMore === true || response.data?.pageInfo?.hasMore === true) return true;
+  if (response.pageInfo?.hasNextPage === true || response.data?.pageInfo?.hasNextPage === true) return true;
+
+  if (rawChatsCount !== undefined && rawChatsCount === 0) return false;
+  if (limit !== undefined && rawChatsCount !== undefined && rawChatsCount < limit) return false;
+
+  const nextCursor = getNextChatCursor(response);
+  return Boolean(nextCursor);
 }
 
 /** Map raw API chat object → local Chat */
-function mapApiChat(c: any): Chat {
+export function mapApiChat(c: any): Chat {
   const id = String(c._id || c.id || Math.random().toString(36).substring(7));
   const rawName = c.name || c.phoneNumber || c.phone_number || 'CRM User';
   const initials = rawName ? rawName.charAt(0).toUpperCase() : '?';
   const ts = c.lastMessageTime || c.last_message_at || c.last_msg_received_at || c.updatedAt || new Date().toISOString();
-  
+
   const clean = (val: any): string | null => {
     if (val === undefined || val === null) return null;
     const str = String(val).trim();
@@ -118,7 +181,7 @@ function mapApiChat(c: any): Chat {
     return str;
   };
 
-  const resolvedSocialAccountId = 
+  const resolvedSocialAccountId =
     clean(c.socialAccountId) ||
     clean(c.social_account_id) ||
     clean(c.accountId) ||
@@ -179,15 +242,15 @@ function mapApiChat(c: any): Chat {
 }
 
 /** Map raw API message object → local Message */
-function mapApiMessage(m: any, chatId: string): Message {
+export function mapApiMessage(m: any, chatId: string): Message {
   const id = String(m._id || m.id || m.messageId || m.message_id || m.message?.id || Math.random().toString(36).substring(7));
   const ts = m.createdAt || m.created_at || m.timestamp || m.message?.timestamp || new Date().toISOString();
   const type = m.message_type || m.type || m.message?.type || 'text';
-  const isOutgoing = m.isOutgoing === true || 
-                     m.fromCrm === true || 
-                     String(m.flag || '').toLowerCase() === 'outgoing' ||
-                     String(m.flag || '').toLowerCase() === 'send' ||
-                     String(m.message?.flag || '').toLowerCase() === 'send';
+  const isOutgoing = m.isOutgoing === true ||
+    m.fromCrm === true ||
+    String(m.flag || '').toLowerCase() === 'outgoing' ||
+    String(m.flag || '').toLowerCase() === 'send' ||
+    String(m.message?.flag || '').toLowerCase() === 'send';
   return {
     id,
     chatId,
@@ -271,6 +334,11 @@ interface SyncState {
   userToken: string | null;
   tenantId: string | null;
   selectedChatIds: Set<string>;
+  activeChatId: string | null;
+  setActiveChatId: (id: string | null) => void;
+
+  isInitialSync: boolean;
+  setIsInitialSync: (val: boolean) => void;
 
   // User Profile
   userId: string | null;
@@ -282,10 +350,18 @@ interface SyncState {
   // local DB reads
   loadChats: () => Promise<void>;
   loadContacts: () => Promise<void>;
-  loadMessages: (chatId: string) => Promise<void>;
+  loadMessages: (chatId: string) => Promise<number>;
+  loadOlderMessages: (chatId: string, limit?: number) => Promise<number>;
+  appendOlderMessages: (chatId: string, newMsgs: Message[]) => void;
+
+  // chat list pagination
+  lastChatCursor: string | null;
+  hasMoreChats: boolean;
+  isLoadingMoreChats: boolean;
+  loadMoreChats: () => Promise<number>;
 
   // local writes (optimistic)
-  addLocalMessage: (chatId: string, text: string) => Promise<void>;
+  addLocalMessage: (chatId: string, text: string, replyTo?: ReplyToContext | null) => Promise<void>;
   addLocalContact: (contact: Omit<Contact, 'id'>) => Promise<void>;
 
   // selection & bulk actions
@@ -321,6 +397,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   contacts: [],
   messagesByChat: {},
   isSyncing: false,
+  isInitialSync: false,
+  setIsInitialSync: (val: boolean) => set({ isInitialSync: val }),
   syncProgress: null,
   lastSyncedAt: storage.getString(mmkvKeys.LAST_SYNCED_AT) || null,
   isAuthenticated: storage.getString(mmkvKeys.IS_AUTHENTICATED) === 'true',
@@ -328,6 +406,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   userToken: storage.getString(mmkvKeys.USER_TOKEN) || null,
   tenantId: storage.getString(mmkvKeys.TENANT_ID) || null,
   selectedChatIds: new Set(),
+  activeChatId: null,
+  setActiveChatId: (id: string | null) => set({ activeChatId: id }),
+
+  lastChatCursor: null,
+  hasMoreChats: true,
+  isLoadingMoreChats: false,
 
   userId: storage.getString(mmkvKeys.USER_ID) || null,
   userName: storage.getString(mmkvKeys.USER_NAME) || null,
@@ -360,7 +444,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     // 3. Parallel background API calls
     Promise.allSettled(
       chatIds.map((id) => API.patch(`/chats/toggle-chat-star/${id}`))
-    ).catch(() => {});
+    ).catch(() => { });
   },
 
   bulkSetPinned: async (chatIds: string[], pinned: boolean) => {
@@ -392,7 +476,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     // 3. Parallel background API calls
     Promise.allSettled(
       chatIds.map((id) => API.patch(`/chats/toggle-chat-pin/${id}`))
-    ).catch(() => {});
+    ).catch(() => { });
   },
 
   fetchCurrentUser: async () => {
@@ -420,7 +504,19 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       await db.update(messagesTable)
         .set({ status, readReceipt: status })
         .where(eq(messagesTable.id, messageId));
-      await get().loadMessages(chatId);
+
+      set((state) => {
+        const msgs = state.messagesByChat[chatId];
+        if (!msgs) return state;
+        return {
+          messagesByChat: {
+            ...state.messagesByChat,
+            [chatId]: msgs.map((m) =>
+              m.id === messageId ? { ...m, status, readReceipt: status } : m
+            ),
+          },
+        };
+      });
     } catch (err) {
       console.error('Failed to update message status:', err);
     }
@@ -454,6 +550,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
     set({
       isAuthenticated: true,
+      isInitialSync: true,
       userEmail: email,
       userToken: token,
       tenantId: actualTenantId || null,
@@ -461,9 +558,6 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       userName,
       userRole,
     });
-
-    // Start background sync immediately without blocking navigation
-    setTimeout(() => get().syncWithBackend(), 0);
   },
 
   logout: async () => {
@@ -515,10 +609,93 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   loadChats: async () => {
     try {
-      const result = await db.select().from(chatsTable).orderBy(desc(chatsTable.updatedAt));
+      const result = await db.select().from(chatsTable).orderBy(desc(chatsTable.updatedAt)).limit(100);
       set({ chats: result as Chat[] });
     } catch (err) {
       console.error('Failed to load chats:', err);
+    }
+  },
+
+  loadMoreChats: async (): Promise<number> => {
+    const state = get();
+    if (state.isLoadingMoreChats || !state.hasMoreChats) return 0;
+    set({ isLoadingMoreChats: true });
+
+    try {
+      // 1. First check if SQLite has more cached chats not yet loaded into memory
+      const currentCount = state.chats.length;
+      const localResults = await db
+        .select()
+        .from(chatsTable)
+        .orderBy(desc(chatsTable.updatedAt))
+        .limit(50)
+        .offset(currentCount);
+
+      if (localResults.length > 0) {
+        const localChats = localResults as Chat[];
+        set((s) => ({
+          chats: [...s.chats, ...localChats],
+          isLoadingMoreChats: false,
+        }));
+        return localChats.length;
+      }
+
+      // 2. If SQLite has no more local chats, check hasMoreChats before background API sync
+      if (!get().hasMoreChats) {
+        set({ isLoadingMoreChats: false });
+        return 0;
+      }
+
+      const params: Record<string, any> = { limit: 40 };
+      if (state.lastChatCursor) {
+        params.after = state.lastChatCursor;
+      }
+
+      const res = await API.get('/chats/v2/all', { params });
+      const rawChats = extractChats(res.data);
+      const hasMore = checkHasMoreChats(res.data, rawChats.length, 40);
+
+      if (rawChats.length === 0 || !hasMore) {
+        if (rawChats.length > 0) {
+          const mappedChats = rawChats.map(mapApiChat);
+          await upsertChatBatch(mappedChats);
+          set((s) => {
+            const existingIds = new Set(s.chats.map((c) => c.id));
+            const newUnique = mappedChats.filter((c) => !existingIds.has(c.id));
+            return {
+              chats: [...s.chats, ...newUnique],
+              lastChatCursor: null,
+              hasMoreChats: false,
+              isLoadingMoreChats: false,
+            };
+          });
+          return mappedChats.length;
+        }
+
+        set({ hasMoreChats: false, isLoadingMoreChats: false, lastChatCursor: null });
+        return 0;
+      }
+
+      const mappedChats = rawChats.map(mapApiChat);
+      await upsertChatBatch(mappedChats);
+      const nextCursor = getNextChatCursor(res.data);
+
+      set((s) => {
+        const existingIds = new Set(s.chats.map((c) => c.id));
+        const newUnique = mappedChats.filter((c) => !existingIds.has(c.id));
+        return {
+          chats: [...s.chats, ...newUnique],
+          lastChatCursor: nextCursor,
+          hasMoreChats: Boolean(nextCursor),
+          isLoadingMoreChats: false,
+        };
+      });
+
+      return mappedChats.length;
+    } catch (err) {
+      console.error('[sync] loadMoreChats error:', err);
+      set({ isLoadingMoreChats: false });
+      return 0;
     }
   },
 
@@ -531,7 +708,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     }
   },
 
-  loadMessages: async (chatId: string) => {
+  loadMessages: async (chatId: string): Promise<number> => {
     try {
       const result = await db
         .select()
@@ -546,16 +723,135 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           [chatId]: result as Message[],
         },
       }));
+      return result.length;
     } catch (err) {
       console.error('Failed to load messages:', err);
+      return 0;
     }
+  },
+
+  loadOlderMessages: async (chatId: string, limit = 40): Promise<number> => {
+    try {
+      const currentMsgs = get().messagesByChat[chatId] || [];
+      if (currentMsgs.length === 0) {
+        await get().loadMessages(chatId);
+        return (get().messagesByChat[chatId] || []).length;
+      }
+
+      const oldestMsg = currentMsgs[currentMsgs.length - 1];
+      const oldestTs = oldestMsg.timestamp;
+
+      // Query local SQLite for messages older than the oldest in memory
+      const olderFromDb = await db
+        .select()
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.chatId, chatId),
+            lt(messagesTable.timestamp, oldestTs)
+          )
+        )
+        .orderBy(desc(messagesTable.timestamp))
+        .limit(limit);
+
+      if (olderFromDb.length > 0) {
+        const existingIds = new Set(currentMsgs.map((m) => m.id));
+        const newUnique = (olderFromDb as Message[]).filter((m) => !existingIds.has(m.id));
+
+        if (newUnique.length > 0) {
+          set((state) => ({
+            messagesByChat: {
+              ...state.messagesByChat,
+              [chatId]: [...(state.messagesByChat[chatId] || []), ...newUnique],
+            },
+          }));
+          return newUnique.length;
+        }
+      }
+
+      return 0;
+    } catch (err) {
+      console.error('Failed to load older messages from db:', err);
+      return 0;
+    }
+  },
+
+  appendOlderMessages: (chatId: string, newMsgs: Message[]) => {
+    if (!newMsgs || newMsgs.length === 0) return;
+    set((state) => {
+      const current = state.messagesByChat[chatId] || [];
+      const existingIds = new Set(current.map((m) => m.id));
+      const filtered = newMsgs.filter((m) => !existingIds.has(m.id));
+      if (filtered.length === 0) return state;
+
+      const combined = [...current, ...filtered];
+      // Keep sorted descending by timestamp
+      combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      return {
+        messagesByChat: {
+          ...state.messagesByChat,
+          [chatId]: combined,
+        },
+      };
+    });
   },
 
   // ── Optimistic local writes ────────────────────────────────────────────────
 
-  addLocalMessage: async (chatId: string, text: string) => {
-    const messageId = Math.random().toString(36).substring(7);
+  addLocalMessage: async (chatId: string, text: string, replyTo?: ReplyToContext | null) => {
+    console.dir({ replyTo }, { depth: null })
+    const messageId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const timestamp = new Date().toISOString();
+
+    const effectiveReplyMsgId = replyTo?.messageId || replyTo?.id || null;
+    const effectiveReplyTo = replyTo ? {
+      messageId: replyTo.messageId || replyTo.id,
+      message_type: replyTo.message_type || replyTo.type || 'text',
+      content: replyTo.content || replyTo.text || '',
+      sender: replyTo.sender || replyTo.senderName || '',
+      fileName: replyTo.fileName || '',
+      uploaded_id: replyTo.uploaded_id || '',
+    } : null;
+
+    const chat = get().chats.find((c) => c.id === chatId);
+
+    const rawJsonObj = {
+      _id: messageId,
+      tempId: messageId,
+      chatId,
+      chat_id: chatId,
+      flag: 'outgoing',
+      fromCrm: true,
+      outgoing: true,
+      channel: chat?.channel || 'whatsapp',
+      status: 1,
+      isOptimistic: true,
+      message_type: 'text',
+      created_at: timestamp,
+      createdAt: timestamp,
+      timestamp: Date.now(),
+      user: {
+        clientUserID: get().userId || null,
+        clientId: get().userId || null,
+        name: get().userName || '',
+        username: get().userName || '',
+        role: get().userRole || 'Client',
+        roleName: get().userRole || 'Client',
+      },
+      sentByUserId: get().userId || '',
+      sentByName: get().userName || '',
+      sentByUsername: get().userName || '',
+      sentByRole: get().userRole || '',
+      ...(effectiveReplyTo ? { reply_to: effectiveReplyTo } : {}),
+      message: {
+        id: messageId,
+        replyMsgId: effectiveReplyMsgId,
+        timestamp,
+        type: 'text',
+        text,
+      },
+    };
 
     const newMessage: Message = {
       id: messageId,
@@ -569,17 +865,40 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       timestamp,
       readReceipt: null,
       isImage: false,
-      rawJson: null,
+      rawJson: JSON.stringify(rawJsonObj),
     };
 
     set((state) => {
       const chatMsgs = state.messagesByChat[chatId] || [];
-      const updatedChats = state.chats
-        .map((c) => c.id === chatId ? { ...c, lastMessage: text, updatedAt: timestamp } : c)
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      let updatedChat: Chat | undefined;
+      const otherChats: Chat[] = [];
+
+      for (const c of state.chats) {
+        if (c.id === chatId) {
+          updatedChat = { ...c, lastMessage: text, updatedAt: timestamp };
+        } else {
+          otherChats.push(c);
+        }
+      }
+
+      let nextChats = state.chats;
+      if (updatedChat) {
+        if (updatedChat.pinned) {
+          nextChats = [updatedChat, ...otherChats];
+        } else {
+          const pinnedChats: Chat[] = [];
+          const unpinnedChats: Chat[] = [];
+          for (const c of otherChats) {
+            if (c.pinned) pinnedChats.push(c);
+            else unpinnedChats.push(c);
+          }
+          nextChats = [...pinnedChats, updatedChat, ...unpinnedChats];
+        }
+      }
+
       return {
         messagesByChat: { ...state.messagesByChat, [chatId]: [newMessage, ...chatMsgs] },
-        chats: updatedChats,
+        chats: nextChats,
       };
     });
 
@@ -605,28 +924,45 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       }
 
       const chat = get().chats.find((c) => c.id === chatId);
+      let recipientPhone = chat?.phoneNumber || '';
+      if (!recipientPhone) {
+        try {
+          const dbRes = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId)).limit(1);
+          if (dbRes.length > 0 && dbRes[0].phoneNumber) {
+            recipientPhone = dbRes[0].phoneNumber;
+          }
+        } catch (_) { }
+      }
+
       const payload = {
         type: 'text',
-        to: chat?.phoneNumber || '',
+        to: recipientPhone,
+        display_phone_number: recipientPhone,
+        phone_number: recipientPhone,
         chatId: chat?.id || '',
         channel: chat?.channel || 'whatsapp',
         phone_number_id: chat?.accountId || '',
         accountId: chat?.accountId || '',
         user: {
-          clientUserID: get().userId || '',
-          clientId: get().userId || '',
+          clientUserID: get().userId || null,
+          clientId: get().userId || null,
           name: get().userName || '',
           username: get().userName || '',
-          role: get().userRole || '',
-          roleName: get().userRole || '',
+          role: get().userRole || 'Client',
+          roleName: get().userRole || 'Client',
         },
+        tempId: messageId,
+        replyMsgId: effectiveReplyMsgId,
+        ...(effectiveReplyTo ? { reply_to: effectiveReplyTo } : {}),
         message: {
-          replyMsgId: null,
+          replyMsgId: effectiveReplyMsgId,
           text: {
             body: text,
           },
         },
       };
+
+      // console.log('🔌 [SOCKET SEND] Payload:', JSON.stringify(payload, null, 2));
 
       socket.emit("message:send", payload, async (res: any) => {
         if (!res || !res.success) {
@@ -642,7 +978,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             if (backendId !== messageId) {
               // Delete optimistic pending entry
               await db.delete(messagesTable).where(eq(messagesTable.id, messageId));
-              
+
               // Insert confirmed message entry
               const confirmedMsg: Message = {
                 ...newMessage,
@@ -696,21 +1032,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   syncData: async (apiChats: Chat[], apiContacts: Contact[]) => {
     set({ isSyncing: true });
     try {
-      for (const chat of apiChats) await upsertChat(chat);
-      for (const contact of apiContacts) {
-        await db.insert(contactsTable).values(contact).onConflictDoUpdate({
-          target: contactsTable.id,
-          set: {
-            name: contact.name,
-            username: contact.username,
-            phone: contact.phone,
-            channel: contact.channel,
-            status: contact.status,
-            subStatus: contact.subStatus,
-            lastActivity: contact.lastActivity,
-          },
-        });
-      }
+      await upsertChatBatch(apiChats);
+      await upsertContactBatch(apiContacts);
       const now = new Date().toISOString();
       storage.set(mmkvKeys.LAST_SYNCED_AT, now);
       set({ isSyncing: false, lastSyncedAt: now });
@@ -728,7 +1051,18 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const { isAuthenticated, userToken, isSyncing } = get();
     if (!isAuthenticated || !userToken || isSyncing) return;
 
-    set({ isSyncing: true, syncProgress: { label: 'Syncing chats…', chatsSynced: 0, totalChats: 0, messagesSynced: 0 } });
+    set({
+      isSyncing: true,
+      syncProgress: {
+        label: 'Connecting to server…',
+        step: 1,
+        totalSteps: 4,
+        chatsSynced: 0,
+        totalChats: 0,
+        messagesSynced: 0,
+        percentage: 5,
+      },
+    });
 
     let cancelled = false;
 
@@ -760,47 +1094,73 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         }
 
         const pageChats = extractChats(response);
-        if (pageChats.length === 0) break;
+        if (pageChats.length === 0) {
+          set({ lastChatCursor: null, hasMoreChats: false });
+          break;
+        }
 
+        const pageChatsMapped: Chat[] = [];
         for (const raw of pageChats) {
           const chat = mapApiChat(raw);
           if (!seenIds.has(chat.id)) {
             seenIds.add(chat.id);
             allChats.push(chat);
-            await upsertChat(chat);
+            pageChatsMapped.push(chat);
           }
         }
+        await upsertChatBatch(pageChatsMapped);
 
-        set({ syncProgress: { label: 'Syncing chats…', chatsSynced: allChats.length, totalChats: allChats.length, messagesSynced: 0 } });
+        set({
+          syncProgress: {
+            label: `Syncing chats (${allChats.length} downloaded)…`,
+            step: 1,
+            totalSteps: 4,
+            chatsSynced: allChats.length,
+            totalChats: allChats.length,
+            messagesSynced: 0,
+            percentage: Math.min(45, Math.round(10 + ((page + 1) / MAX_CHAT_PAGES) * 35)),
+          },
+        });
 
         // Refresh chat list in store immediately so UI shows real chats fast
         await get().loadChats();
 
+        const hasMore = checkHasMoreChats(response, pageChats.length, CHAT_PAGE_SIZE);
         cursor = getNextChatCursor(response);
-        if (!cursor) break;
+        set({ lastChatCursor: cursor, hasMoreChats: hasMore && Boolean(cursor) });
+        if (!cursor || !hasMore) {
+          set({ lastChatCursor: null, hasMoreChats: false });
+          break;
+        }
       }
 
       // ── Phase 2: Fetch contacts ────────────────────────────────────────────
       try {
+        set({
+          syncProgress: {
+            label: 'Syncing contacts…',
+            step: 2,
+            totalSteps: 4,
+            chatsSynced: allChats.length,
+            totalChats: allChats.length,
+            messagesSynced: 0,
+            percentage: 50,
+          },
+        });
         const contactsRes = await API.get('/contacts', { params: { limit: 100 } });
         const rawContacts = extractContacts(contactsRes.data);
 
-        for (const c of rawContacts) {
-          const contact: Contact = {
-            id: String(c._id || c.id || Math.random().toString(36).substring(7)),
-            name: c.name || c.phoneNumber || 'CRM User',
-            username: c.email || null,
-            phone: c.phoneNumber || c.phone_number || null,
-            channel: c.channel || null,
-            status: (c.tags && c.tags.length > 0) ? c.tags[0] : null,
-            subStatus: 'Active',
-            lastActivity: c.updatedAt || c.createdAt || new Date().toISOString(),
-          };
-          await db.insert(contactsTable).values(contact).onConflictDoUpdate({
-            target: contactsTable.id,
-            set: { name: contact.name, username: contact.username, phone: contact.phone, channel: contact.channel, status: contact.status, subStatus: contact.subStatus, lastActivity: contact.lastActivity },
-          });
-        }
+        const contactsToUpsert: Contact[] = rawContacts.map((c) => ({
+          id: String(c._id || c.id || Math.random().toString(36).substring(7)),
+          name: c.name || c.phoneNumber || 'CRM User',
+          username: c.email || null,
+          phone: c.phoneNumber || c.phone_number || null,
+          channel: c.channel || null,
+          status: (c.tags && c.tags.length > 0) ? c.tags[0] : null,
+          subStatus: 'Active',
+          lastActivity: c.updatedAt || c.createdAt || new Date().toISOString(),
+        }));
+        await upsertContactBatch(contactsToUpsert);
         await get().loadContacts();
       } catch (e) {
         console.warn('[sync] contacts fetch failed (non-fatal):', e);
@@ -813,18 +1173,27 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         if (cancelled) return;
 
         const chat = messageChats[i];
-        set({ syncProgress: { label: 'Syncing messages…', chatsSynced: allChats.length, totalChats: allChats.length, messagesSynced: i } });
+        set({
+          syncProgress: {
+            label: `Downloading messages (${i + 1}/${messageChats.length})…`,
+            step: 3,
+            totalSteps: 4,
+            chatsSynced: allChats.length,
+            totalChats: allChats.length,
+            messagesSynced: i + 1,
+            totalMessagesToSync: messageChats.length,
+            percentage: Math.min(92, 50 + Math.round(((i + 1) / messageChats.length) * 42)),
+          },
+        });
 
         try {
           const msgRes = await API.get(`/messages/${chat.id}/sync`, { params: { direction: 'older', limit: 50 } });
           const rawMsgs = extractMessages(msgRes.data);
 
-          for (const m of rawMsgs) {
-            await upsertMessage(mapApiMessage(m, chat.id));
-          }
-
-          // Update in-memory messagesByChat for this chat
           if (rawMsgs.length > 0) {
+            const mappedMsgs = rawMsgs.map((m) => mapApiMessage(m, chat.id));
+            await upsertMessageBatch(mappedMsgs);
+            // Update in-memory messagesByChat for this chat
             await get().loadMessages(chat.id);
           }
         } catch (e) {
@@ -832,17 +1201,52 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         }
       }
 
+      // ── Phase 4: Fetch & Cache Filter Options & Templates ──────────────────
+      set({
+        syncProgress: {
+          label: 'Setting up templates & filters…',
+          step: 4,
+          totalSteps: 4,
+          chatsSynced: allChats.length,
+          totalChats: allChats.length,
+          messagesSynced: messageChats.length,
+          totalMessagesToSync: messageChats.length,
+          percentage: 96,
+        },
+      });
+      await get().fetchAndCacheFilterOptions();
+
       if (!cancelled) {
         const now = new Date().toISOString();
         storage.set(mmkvKeys.LAST_SYNCED_AT, now);
-        set({ isSyncing: false, syncProgress: null, lastSyncedAt: now });
+        set({
+          isSyncing: false,
+          isInitialSync: false,
+          syncProgress: {
+            label: 'All caught up!',
+            step: 4,
+            totalSteps: 4,
+            chatsSynced: allChats.length,
+            totalChats: allChats.length,
+            messagesSynced: messageChats.length,
+            totalMessagesToSync: messageChats.length,
+            percentage: 100,
+          },
+          lastSyncedAt: now,
+        });
         await get().loadChats();
-        await get().fetchAndCacheFilterOptions();
+
+        // Clear progress after short completion moment
+        setTimeout(() => {
+          if (!get().isSyncing) {
+            set({ syncProgress: null });
+          }
+        }, 1200);
       }
     } catch (err) {
       console.error('[sync] syncWithBackend error:', err);
       if (!cancelled) {
-        set({ isSyncing: false, syncProgress: null });
+        set({ isSyncing: false, isInitialSync: false, syncProgress: null });
       }
     }
   },
@@ -854,13 +1258,17 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         : incoming;
 
       const chatId = String(
-        event.chatId || 
-        event.chat_id || 
-        event.chat?._id || 
-        event.chat?.id || 
-        event.chatDetails?.chatId || 
-        event.chatDetails?.chat_id || 
-        event.chatDetails?._id || 
+        event.chatId ||
+        event.chat_id ||
+        event.chat?._id ||
+        event.chat?.id ||
+        event.chatDetails?.chatId ||
+        event.chatDetails?.chat_id ||
+        event.chatDetails?._id ||
+        incoming.chatId ||
+        incoming.chat_id ||
+        incoming.message?.chatId ||
+        incoming.message?.chat_id ||
         ''
       );
       if (!chatId) return;
@@ -869,56 +1277,82 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const msg = mapApiMessage(incoming, chatId);
       await upsertMessage(msg);
 
-      // 2. Map and update the corresponding chat's last message time & text
-      const chatRes = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId)).limit(1);
-      let updatedChat: Chat | null = null;
-      if (chatRes.length > 0) {
-        const chat = chatRes[0];
-        updatedChat = {
-          ...chat,
-          lastMessage: msg.text || chat.lastMessage,
-          unreadCount: msg.isOutgoing ? chat.unreadCount : (chat.unreadCount + 1),
-          updatedAt: msg.timestamp,
-          accountId: chat.accountId,
-        };
-        await upsertChat(updatedChat);
-      } else {
-        // If chat doesn't exist locally, fetch it from backend
-        try {
-          const res = await API.get(`/chats/${chatId}`);
-          if (res.data?.data) {
-            updatedChat = mapApiChat(res.data.data);
-            await upsertChat(updatedChat);
-          }
-        } catch (_) {}
+      const isActiveChat = get().activeChatId === chatId;
+
+      // 2. Play notification sound on incoming messages when not active in this chat
+      if (!msg.isOutgoing && !isActiveChat) {
+        playNotificationSound();
       }
 
-      // 3. Fast incremental in-memory update without full-table loadChats()
+      // 3. Update SQLite chat & calculate accurate unread count
+      const chatRes = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId)).limit(1);
+      const existingDbChat = chatRes.length > 0 ? chatRes[0] : null;
+
+      const currentUnread = existingDbChat ? Number(existingDbChat.unreadCount || 0) : 0;
+      const computedUnread = isActiveChat
+        ? 0
+        : msg.isOutgoing
+          ? currentUnread
+          : (event.chatDetails?.unreadCount !== undefined
+            ? Number(event.chatDetails.unreadCount)
+            : currentUnread + 1);
+
+      let targetChat: Chat;
+      if (existingDbChat) {
+        targetChat = {
+          ...existingDbChat,
+          lastMessage: msg.text || existingDbChat.lastMessage,
+          unreadCount: computedUnread,
+          updatedAt: msg.timestamp,
+        };
+      } else if (event.chatDetails || event.chat) {
+        targetChat = mapApiChat(event.chatDetails || event.chat);
+        targetChat.lastMessage = msg.text || targetChat.lastMessage;
+        targetChat.unreadCount = computedUnread;
+        targetChat.updatedAt = msg.timestamp;
+      } else {
+        targetChat = {
+          id: chatId,
+          name: incoming.senderName || incoming.name || incoming.phoneNumber || 'Contact',
+          username: null,
+          phoneNumber: incoming.phoneNumber || null,
+          channel: incoming.channel || 'whatsapp',
+          accountId: null,
+          lastMessage: msg.text || '',
+          unreadCount: computedUnread,
+          avatar: '?',
+          pinned: false,
+          isStarred: false,
+          isOpen: true,
+          isBlocked: false,
+          assignedToName: null,
+          leadStage: null,
+          socialAccountId: null,
+          departmentId: null,
+          quickAssistKeyword: null,
+          campaignId: null,
+          updatedAt: msg.timestamp,
+          isCampaignChat: false,
+          rawJson: null,
+        };
+      }
+
+      await upsertChat(targetChat);
+
+      // 4. Update in-memory state and move targetChat to the top
       set((state) => {
-        let found = false;
-        let nextChats = state.chats.map((c) => {
-          if (c.id === chatId) {
-            found = true;
-            return {
-              ...c,
-              lastMessage: msg.text || c.lastMessage,
-              unreadCount: msg.isOutgoing ? c.unreadCount : (c.unreadCount + 1),
-              updatedAt: msg.timestamp,
-            };
-          }
-          return c;
-        });
+        const otherChats = state.chats.filter((c) => c.id !== chatId);
+        let nextChats: Chat[];
 
-        if (!found && updatedChat) {
-          nextChats = [updatedChat, ...nextChats];
+        if (targetChat.pinned) {
+          const otherPinned = otherChats.filter((c) => c.pinned);
+          const unpinned = otherChats.filter((c) => !c.pinned);
+          nextChats = [targetChat, ...otherPinned, ...unpinned];
+        } else {
+          const pinned = otherChats.filter((c) => c.pinned);
+          const unpinned = otherChats.filter((c) => !c.pinned);
+          nextChats = [...pinned, targetChat, ...unpinned];
         }
-
-        // Re-sort with pinned first
-        nextChats.sort((a, b) => {
-          if (a.pinned && !b.pinned) return -1;
-          if (!a.pinned && b.pinned) return 1;
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        });
 
         const activeChatMsgs = state.messagesByChat[chatId];
         const nextMsgs = activeChatMsgs
@@ -930,14 +1364,6 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           ...(nextMsgs ? { messagesByChat: { ...state.messagesByChat, [chatId]: nextMsgs } } : {}),
         };
       });
-
-      // Trigger background prefetching for any media attachment in realtime message
-      if (msg.type !== 'text' && msg.type !== 'unsupported') {
-        try {
-          const { prefetchChatMedia } = require('../db/client');
-          prefetchChatMedia(chatId);
-        } catch (_) {}
-      }
     } catch (err) {
       console.error('[realtime] handleRealtimeMessage error:', err);
     }
@@ -978,6 +1404,10 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   resetUnreadCount: async (chatId: string) => {
     try {
+      const chat = get().chats.find((c) => c.id === chatId);
+      // Skip redundant DB writes and state updates if unreadCount is already 0
+      if (!chat || chat.unreadCount === 0) return;
+
       await db.update(chatsTable)
         .set({ unreadCount: 0 })
         .where(eq(chatsTable.id, chatId));
@@ -1001,9 +1431,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       // 1. Social Accounts
       try {
         const accRes = await API.get('/social-accounts');
-        const accs = Array.isArray(accRes.data?.data) ? accRes.data.data 
-          : Array.isArray(accRes.data) ? accRes.data 
-          : [];
+        const accs = Array.isArray(accRes.data?.data) ? accRes.data.data
+          : Array.isArray(accRes.data) ? accRes.data
+            : [];
         storage.set('cached_social_accounts', JSON.stringify(accs));
       } catch (e) {
         console.warn('Sync social accounts failed:', e);
@@ -1040,7 +1470,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const chats = get().chats;
       const cachedAccsStr = storage.getString('cached_social_accounts');
       const cachedAccs = cachedAccsStr ? JSON.parse(cachedAccsStr) : [];
-      
+
       const phoneIdsSet = new Set<string>();
       chats.forEach(c => { if (c.accountId) phoneIdsSet.add(c.accountId); });
       cachedAccs.forEach((acc: any) => {

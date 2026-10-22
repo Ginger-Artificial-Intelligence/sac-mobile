@@ -3,6 +3,7 @@ import { Text } from "./Text";
 import { Icon } from "./Icon";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeStore } from "../../store/themeStore";
+import { useState } from "react";
 
 export interface TopAppBarProps {
   title: string;
@@ -18,6 +19,7 @@ export function TopAppBar({ title, onMenuPress, rightAction, hideMenu, largeTitl
   const topPadding = Math.max(insets.top, 12);
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
+  const [isMenuPressed, setIsMenuPressed] = useState(false);
   
   return (
     <View 
@@ -34,15 +36,15 @@ export function TopAppBar({ title, onMenuPress, rightAction, hideMenu, largeTitl
         {!hideMenu && (
           <Pressable 
             onPress={onMenuPress}
-            style={({ pressed }) => [
-              {
-                padding: 6,
-                borderRadius: 20,
-                opacity: pressed ? 0.6 : 1,
-                transform: [{ scale: pressed ? 0.90 : 1 }],
-                backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
-              }
-            ]}
+            onPressIn={() => setIsMenuPressed(true)}
+            onPressOut={() => setIsMenuPressed(false)}
+            style={{
+              padding: 6,
+              borderRadius: 20,
+              opacity: isMenuPressed ? 0.6 : 1,
+              transform: [{ scale: isMenuPressed ? 0.90 : 1 }],
+              backgroundColor: isMenuPressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
+            }}
           >
             <Icon name={(menuIcon || "menu") as any} size={24} color={colors.onSurfaceVariant} />
           </Pressable>
@@ -60,7 +62,7 @@ export function TopAppBar({ title, onMenuPress, rightAction, hideMenu, largeTitl
         </Text>
       </View>
       
-      <View className="flex flex-row items-center justify-end">
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', zIndex: 10 }}>
         {rightAction}
       </View>
     </View>

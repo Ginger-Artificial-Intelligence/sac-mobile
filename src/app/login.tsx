@@ -49,7 +49,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await login(data.email, data.password);
-      router.replace("/");
+      router.replace("/sync");
     } catch (err: any) {
       setError("email", { type: "manual", message: err.message });
     } finally {

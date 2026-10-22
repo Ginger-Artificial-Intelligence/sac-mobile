@@ -2,7 +2,7 @@
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 
-const GATEWAY_URL = 'https://premiumapigateway.scribbleandconnect.com';
+const GATEWAY_URL = 'https://eazycrm-apigateway.scribbleandconnect.com';
 
 let globalSocket: Socket | null = null;
 
@@ -26,7 +26,7 @@ export const connectSocket = (token: string, tenantId: string): Socket => {
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
     extraHeaders: {
-      origin: 'https://premiumcrm.scribbleandconnect.com'
+      origin: 'https://eazycrm.scribbleandconnect.com'
     }
   }) as Socket;
 

@@ -436,13 +436,55 @@ export const TemplatesModal = React.memo(({
       roleName: useSyncStore.getState().userRole || "",
     };
 
+    // Resolve recipient phone number with multiple fallbacks
+    let effectivePhone = chatPhoneNumber;
+    if (!effectivePhone) {
+      const chat = useSyncStore.getState().chats.find((c) => c.id === chatId);
+      effectivePhone = chat?.phoneNumber || "";
+    }
+    if (!effectivePhone) {
+      try {
+        const { chatsTable } = require("../../db/schema");
+        const { db } = require("../../db/client");
+        const { eq } = require("drizzle-orm");
+        const dbRes = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId)).limit(1);
+        if (dbRes.length > 0 && dbRes[0].phoneNumber) {
+          effectivePhone = dbRes[0].phoneNumber;
+        }
+      } catch (_) { }
+    }
+
+    if (!effectivePhone) {
+      Alert.alert("Missing Phone Number", "Cannot send template because this chat does not have a recipient phone number.");
+      return;
+    }
+
+    // Resolve account ID / phone number ID
+    let effectiveAccountId = chatAccountId;
+    if (!effectiveAccountId) {
+      const chat = useSyncStore.getState().chats.find((c) => c.id === chatId);
+      effectiveAccountId = chat?.accountId || "";
+    }
+    if (!effectiveAccountId) {
+      const cachedAccsStr = storage.getString("cached_social_accounts");
+      if (cachedAccsStr) {
+        try {
+          const cachedAccs = JSON.parse(cachedAccsStr);
+          const wa = cachedAccs.find((a: any) => String(a.channel).toLowerCase() === "whatsapp" && (a.phone_number_id || a.accountId || a.chatAccountId));
+          if (wa) effectiveAccountId = String(wa.phone_number_id || wa.accountId || wa.chatAccountId || "");
+        } catch (_) { }
+      }
+    }
+
     const payload = {
       type: "template",
-      to: chatPhoneNumber,
+      to: effectivePhone,
+      display_phone_number: effectivePhone,
+      phone_number: effectivePhone,
       chatId: chatId,
       channel: channel || "whatsapp",
-      phone_number_id: chatAccountId,
-      accountId: chatAccountId,
+      phone_number_id: effectiveAccountId,
+      accountId: effectiveAccountId,
       user: userPayload,
       message: {
         name: selectedTemplate.name,
@@ -459,7 +501,7 @@ export const TemplatesModal = React.memo(({
         onClose();
       } else {
         console.warn("Socket template send failed:", res);
-        Alert.alert("Send Failed", res?.message || "Failed to send template message.");
+        Alert.alert("Send Failed", res?.error || res?.message || "Failed to send template message.");
       }
     });
   };

@@ -7,8 +7,21 @@ import * as DocumentPicker from "expo-document-picker";
 import { CustomEmojiPicker } from "./CustomEmojiPicker";
 import { useThemeStore } from "../../store/themeStore";
 
+export interface ReplyingToMessage {
+  id: string;
+  messageId?: string;
+  messageOgId: string;
+  senderName: string;
+  text: string;
+  type: string;
+  mediaUrl?: string;
+  fileName?: string;
+  uploaded_id?: string;
+  isOutgoing?: boolean;
+}
+
 export interface ChatInputProps {
-  onSend: (text: string) => void;
+  onSend: (text: string, replyTo?: ReplyingToMessage | null) => void;
   insets: {
     top: number;
     bottom: number;
@@ -17,9 +30,18 @@ export interface ChatInputProps {
   };
   keyboardHeight: number;
   onPressTemplates: () => void;
+  replyingTo?: ReplyingToMessage | null;
+  onCancelReply?: () => void;
 }
 
-export const ChatInput = React.memo(({ onSend, insets, keyboardHeight, onPressTemplates }: ChatInputProps) => {
+export const ChatInput = React.memo(({
+  onSend,
+  insets,
+  keyboardHeight,
+  onPressTemplates,
+  replyingTo = null,
+  onCancelReply,
+}: ChatInputProps) => {
   const [text, setText] = useState("");
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sheetContent, setSheetContent] = useState<'media' | 'emoji' | null>(null);
@@ -40,7 +62,7 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight, onPressTe
 
   const handleSend = () => {
     if (text.trim().length === 0) return;
-    onSend(text.trim());
+    onSend(text.trim(), replyingTo);
     setText("");
   };
 
@@ -161,6 +183,44 @@ export const ChatInput = React.memo(({ onSend, insets, keyboardHeight, onPressTe
             zIndex: 1,
           }}
         />
+      )}
+
+      {/* Reply Preview Banner */}
+      {replyingTo && (
+        <View
+          style={{
+            backgroundColor: isDark ? "rgba(30, 41, 59, 0.95)" : "rgba(241, 245, 249, 0.98)",
+            borderLeftColor: colors.primary,
+            borderLeftWidth: 4,
+            borderColor: colors.divider,
+            borderWidth: 1,
+            borderTopWidth: 0,
+          }}
+          className="mx-3 mt-2 mb-1 p-2.5 rounded-r-xl flex-row items-center justify-between shadow-xs"
+        >
+          <View className="flex-1 mr-2">
+            <View className="flex-row items-center gap-1.5 mb-0.5">
+              <Icon name="reply" size={13} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>
+                {replyingTo.senderName || (replyingTo.isOutgoing ? "You" : "Contact")}
+              </Text>
+            </View>
+            <Text
+              numberOfLines={1}
+              style={{ color: colors.onSurfaceVariant, fontSize: 13 }}
+            >
+              {replyingTo.text || (replyingTo.type && replyingTo.type !== 'text' ? `[${replyingTo.type}]` : "Message")}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={onCancelReply}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            className="w-7 h-7 rounded-full items-center justify-center active:opacity-70 bg-black/10 dark:bg-white/10"
+          >
+            <Icon name="close" size={16} color={colors.outline} />
+          </Pressable>
+        </View>
       )}
 
       {/* Chat Input Row */}

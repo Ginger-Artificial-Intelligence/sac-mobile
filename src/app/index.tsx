@@ -16,6 +16,8 @@ import InboxScreen from "../screens/inbox";
 import ProfileScreen from "../screens/profile";
 import { useSyncStore } from "../store/syncStore";
 
+import { useSharedValue } from "react-native-reanimated";
+
 const TABS = ["chats", "contacts", "dashboard", "profile"];
 
 export default function MainAppContainer() {
@@ -28,6 +30,11 @@ export default function MainAppContainer() {
   
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showInboxMenu, setShowInboxMenu] = useState(false);
+  const [isStarPressed, setIsStarPressed] = useState(false);
+  const [isPinPressed, setIsPinPressed] = useState(false);
+  const [isMutePressed, setIsMutePressed] = useState(false);
+
+  const pagePosition = useSharedValue(0);
 
   // Sync incoming URL param to PagerView
   useEffect(() => {
@@ -35,6 +42,7 @@ export default function MainAppContainer() {
       const idx = TABS.indexOf(tab);
       if (idx !== -1 && idx !== selectedIndex) {
         setSelectedIndex(idx);
+        pagePosition.value = idx;
         pagerRef.current?.setPage(idx);
       }
     }
@@ -44,12 +52,14 @@ export default function MainAppContainer() {
     const position = e.nativeEvent.position;
     if (position !== selectedIndex) {
       setSelectedIndex(position);
+      pagePosition.value = position;
       router.setParams({ tab: TABS[position] });
     }
   };
 
   const handleTabSelect = (index: number) => {
     setSelectedIndex(index);
+    pagePosition.value = index;
     pagerRef.current?.setPage(index);
     router.setParams({ tab: TABS[index] });
   };
@@ -73,30 +83,30 @@ export default function MainAppContainer() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20, marginRight: 8 }}>
                 <Pressable
                   onPress={() => bulkSetStarred(Array.from(selectedIds), true)}
-                  style={({ pressed }) => [
-                    {
-                      padding: 6,
-                      borderRadius: 20,
-                      opacity: pressed ? 0.6 : 1,
-                      transform: [{ scale: pressed ? 0.90 : 1 }],
-                      backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
-                    }
-                  ]}
+                  onPressIn={() => setIsStarPressed(true)}
+                  onPressOut={() => setIsStarPressed(false)}
+                  style={{
+                    padding: 6,
+                    borderRadius: 20,
+                    opacity: isStarPressed ? 0.6 : 1,
+                    transform: [{ scale: isStarPressed ? 0.90 : 1 }],
+                    backgroundColor: isStarPressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
+                  }}
                 >
                   <Icon name="star-outline" size={26} color={colors.onSurfaceVariant} />
                 </Pressable>
 
                 <Pressable
                   onPress={() => bulkSetPinned(Array.from(selectedIds), true)}
-                  style={({ pressed }) => [
-                    {
-                      padding: 6,
-                      borderRadius: 20,
-                      opacity: pressed ? 0.6 : 1,
-                      transform: [{ scale: pressed ? 0.90 : 1 }],
-                      backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
-                    }
-                  ]}
+                  onPressIn={() => setIsPinPressed(true)}
+                  onPressOut={() => setIsPinPressed(false)}
+                  style={{
+                    padding: 6,
+                    borderRadius: 20,
+                    opacity: isPinPressed ? 0.6 : 1,
+                    transform: [{ scale: isPinPressed ? 0.90 : 1 }],
+                    backgroundColor: isPinPressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
+                  }}
                 >
                   <Icon name="push-pin" size={26} color={colors.onSurfaceVariant} />
                 </Pressable>
@@ -109,15 +119,15 @@ export default function MainAppContainer() {
                       { text: 'Mute', onPress: () => clearSelection() },
                     ]);
                   }}
-                  style={({ pressed }) => [
-                    {
-                      padding: 6,
-                      borderRadius: 20,
-                      opacity: pressed ? 0.6 : 1,
-                      transform: [{ scale: pressed ? 0.90 : 1 }],
-                      backgroundColor: pressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
-                    }
-                  ]}
+                  onPressIn={() => setIsMutePressed(true)}
+                  onPressOut={() => setIsMutePressed(false)}
+                  style={{
+                    padding: 6,
+                    borderRadius: 20,
+                    opacity: isMutePressed ? 0.6 : 1,
+                    transform: [{ scale: isMutePressed ? 0.90 : 1 }],
+                    backgroundColor: isMutePressed ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 50, 107, 0.08)') : 'transparent',
+                  }}
                 >
                   <Icon name="notifications-off" size={26} color={colors.onSurfaceVariant} />
                 </Pressable>
@@ -132,17 +142,28 @@ export default function MainAppContainer() {
           rightAction: (
             <NativeDropdown
               expanded={showInboxMenu}
+            
               onDismissRequest={() => setShowInboxMenu(false)}
               onRequestOpen={() => setShowInboxMenu(true)}
-              style={{ width: 32, height: 32 }}
+              style={{ width: 44, height: 44 }}
               trigger={
-                <View className="p-1 rounded-full active:opacity-70 w-full h-full justify-center items-center">
+                <View style={{ width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' }}>
                   <Icon name="more-vert" size={24} color={colors.onSurfaceVariant} />
                 </View>
               }
               actions={[
-                { label: "New chat", onClick: () => {} },
-                { label: "Add contact", onClick: () => {} },
+                { 
+                  label: "Full Sync Server Data", 
+                  icon: "cloud-sync",
+                  onClick: async () => {
+                    try {
+                      Alert.alert("Full Sync", "Starting full background sync with server...");
+                      await useSyncStore.getState().syncWithBackend();
+                    } catch (e) {
+                      Alert.alert("Sync Error", "Failed to sync data with server.");
+                    }
+                  }
+                },
                 { 
                   label: "Sync Filters", 
                   icon: "sync",
@@ -156,6 +177,8 @@ export default function MainAppContainer() {
                     }
                   }
                 },
+                { label: "New chat", onClick: () => router.setParams({ tab: 'contacts' }) },
+                { label: "Add contact", onClick: () => router.setParams({ tab: 'contacts' }) },
               ]}
             />
           )
@@ -180,13 +203,16 @@ export default function MainAppContainer() {
         style={{ flex: 1 }}
         initialPage={0}
         onPageSelected={onPageSelected}
+        onPageScroll={(e) => {
+          pagePosition.value = e.nativeEvent.position + e.nativeEvent.offset;
+        }}
       >
         <View key="0" className="flex-1"><InboxScreen /></View>
         <View key="1" className="flex-1"><ContactsScreen /></View>
         <View key="2" className="flex-1"><DashboardScreen /></View>
         <View key="3" className="flex-1"><ProfileScreen /></View>
       </PagerView>
-      <BottomTabBar selectedIndex={selectedIndex} onSelect={handleTabSelect} />
+      <BottomTabBar selectedIndex={selectedIndex} onSelect={handleTabSelect} pagePosition={pagePosition} />
     </View>
   );
 }

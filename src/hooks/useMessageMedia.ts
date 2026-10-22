@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import API from '../config/axios';
 import { globalMediaQueue } from '../lib/mediaQueue';
-import { expoDb, getMediaCache, setMediaCache, getMediaParams } from '../db/client';
+import { getMediaCache, setMediaCache, getMediaParams } from '../db/client';
 
 export interface UseMessageMediaOptions {
   mediaId?: string;
@@ -9,7 +9,7 @@ export interface UseMessageMediaOptions {
   chatId?: string;
   phoneNumberId?: string;
   directUrl?: string | null;
-  shouldLoad?: boolean;
+  autoLoad?: boolean; // Default false: only loads from cache, otherwise requires manual user tap
   retryTrigger?: number;
 }
 
@@ -17,6 +17,8 @@ export interface UseMessageMediaResult {
   url: string;
   loading: boolean;
   error: boolean;
+  isLoaded: boolean;
+  loadMedia: () => void;
 }
 
 const mediaUrlCache = new Map<string, string>();
@@ -28,14 +30,13 @@ const getMediaCacheKey = (mediaId: string, phoneId: string) => {
 };
 
 export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMediaResult {
-
   const {
     mediaId = "",
     messageType = "text",
     chatId = "",
     phoneNumberId = "",
     directUrl = "",
-    shouldLoad = true,
+    autoLoad = false,
     retryTrigger = 0,
   } = options;
 
@@ -44,130 +45,184 @@ export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMedi
   const resolvedPhoneId = params.phone_number_id || "";
   const cacheKey = mediaId ? getMediaCacheKey(mediaId, resolvedPhoneId) : "";
   const cachedUrl = cacheKey ? mediaUrlCache.get(cacheKey) || "" : "";
-  const isLocalUrl = Boolean(directUrl && (directUrl.startsWith("file:") || directUrl.startsWith("content:") || directUrl.startsWith("data:")));
-  const preferApiFetch = Boolean(mediaId && !isLocalUrl);
+  const isLocalUrl = Boolean(
+    directUrl &&
+      (directUrl.startsWith("file:") ||
+        directUrl.startsWith("content:") ||
+        directUrl.startsWith("data:"))
+  );
 
-  const [state, setState] = useState<UseMessageMediaResult>({
-    url: preferApiFetch ? cachedUrl : directUrl || cachedUrl,
-    loading: Boolean(!cachedUrl && preferApiFetch && shouldLoad),
-    error: false,
-  });
+  const initialUrl = isLocalUrl ? directUrl! : cachedUrl;
+  const [url, setUrl] = useState<string>(initialUrl);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<boolean>(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(Boolean(initialUrl));
+
+  const [fetchRequested, setFetchRequested] = useState<boolean>(autoLoad);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-    const checkCacheAndLoad = async () => {
-      // 1. Check in-memory
-      if (cachedUrl) {
-        if (!cancelled) setState({ url: cachedUrl, loading: false, error: false });
-        return;
+  // 1. Check local caches (in-memory and SQLite) on mount or key change
+  useEffect(() => {
+    if (isLocalUrl && directUrl) {
+      setUrl(directUrl);
+      setIsLoaded(true);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+
+    if (cachedUrl) {
+      setUrl(cachedUrl);
+      setIsLoaded(true);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+
+    if (!cacheKey) {
+      if (directUrl && directUrl.startsWith("http")) {
+        // If direct http URL exists, we can use it as remote preview
+        setUrl(directUrl);
+        setIsLoaded(true);
+      } else {
+        setUrl("");
+        setIsLoaded(false);
       }
+      setLoading(false);
+      setError(false);
+      return;
+    }
 
-      // 2. Check SQLite
-      if (cacheKey) {
-        try {
-          const stored = await getMediaCache(cacheKey);
-          if (stored) {
-            mediaUrlCache.set(cacheKey, stored);
-            if (!cancelled) setState({ url: stored, loading: false, error: false });
-            return;
-          }
-        } catch (_) { }
-      }
-
-      // 3. If shouldLoad is false, we don't proceed with API call
-      if (!shouldLoad) return;
-
-      // 4. If we shouldn't prefer API fetch, use directUrl
-      if (!preferApiFetch) {
-        if (directUrl) {
-          if (!cancelled) setState({ url: directUrl, loading: false, error: false });
+    let isSubscribed = true;
+    getMediaCache(cacheKey)
+      .then((stored) => {
+        if (!isSubscribed || !mountedRef.current) return;
+        if (stored) {
+          mediaUrlCache.set(cacheKey, stored);
+          setUrl(stored);
+          setIsLoaded(true);
+          setLoading(false);
+          setError(false);
         } else {
-          if (!cancelled) setState({ url: "", loading: false, error: false });
+          // Not in cache
+          if (directUrl && (directUrl.startsWith("file:") || directUrl.startsWith("data:"))) {
+            setUrl(directUrl);
+            setIsLoaded(true);
+          } else {
+            setUrl("");
+            setIsLoaded(false);
+          }
         }
-        return;
-      }
-
-      if ((mediaFailureCounts.get(cacheKey) || 0) >= 3) {
-        if (!cancelled) setState({ url: directUrl || "", loading: false, error: !directUrl });
-        return;
-      }
-
-      // console.log(`📥 [useMessageMedia] Fetching mediaId: ${mediaId}, params:`, params);
-      if (!params.phone_number_id) {
-        console.warn("⚠️ [useMessageMedia] Aborting fetch - phone_number_id is missing");
-        if (!cancelled) setState({ url: directUrl || "", loading: false, error: !directUrl });
-        return;
-      }
-
-      if (!cancelled) setState({ url: directUrl || "", loading: true, error: false });
-      const existing = mediaInFlight.get(cacheKey);
-
-      const request = existing || globalMediaQueue.enqueue<string>(async () => {
-        try {
-          const res = await API.get(`/chats/media/${mediaId}`, { responseType: "blob", params });
-          return await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onerror = () => reject(new Error("Blob read fail"));
-            reader.onloadend = () => {
-              let dataUrl = reader.result as string;
-              if (dataUrl && dataUrl.startsWith("data:application/octet-stream;")) {
-                if (messageType === "image") {
-                  dataUrl = dataUrl.replace("data:application/octet-stream;", "data:image/jpeg;");
-                } else if (messageType === "video") {
-                  dataUrl = dataUrl.replace("data:application/octet-stream;", "data:video/mp4;");
-                } else if (messageType === "audio") {
-                  dataUrl = dataUrl.replace("data:application/octet-stream;", "data:audio/mpeg;");
-                }
-              }
-              resolve(dataUrl || "");
-            };
-            reader.readAsDataURL(res.data);
-          });
-        } catch (fetchErr) {
-          mediaFailureCounts.set(cacheKey, 3);
-          throw fetchErr;
+      })
+      .catch(() => {
+        if (isSubscribed && mountedRef.current) {
+          setUrl("");
+          setIsLoaded(false);
         }
-      }).then(async (dataUrl) => {
-        if (dataUrl) {
-          mediaUrlCache.set(cacheKey, dataUrl);
-          try {
-            await setMediaCache(cacheKey, dataUrl);
-          } catch (_) { }
-          mediaFailureCounts.delete(cacheKey);
-        }
-        return dataUrl || "";
-      }).catch(() => {
-        mediaFailureCounts.set(cacheKey, 3);
-        return "";
       });
 
-      if (!existing) {
-        mediaInFlight.set(cacheKey, request);
-        request.finally(() => mediaInFlight.delete(cacheKey));
-      }
-
-      request
-        .then((url: string) => {
-          if (!cancelled) {
-            if (url) {
-              setState({ url, loading: false, error: false });
-            } else {
-              setState({ url: directUrl || "", loading: false, error: !directUrl });
-            }
-          }
-        })
-        .catch(() => {
-          mediaFailureCounts.set(cacheKey, 3);
-          if (!cancelled) setState({ url: directUrl || "", loading: false, error: !directUrl });
-        });
-    };
-
-    checkCacheAndLoad();
     return () => {
-      cancelled = true;
+      isSubscribed = false;
     };
-  }, [directUrl, mediaId, cacheKey, shouldLoad, preferApiFetch, retryTrigger]);
+  }, [cacheKey, cachedUrl, directUrl, isLocalUrl, retryTrigger]);
 
-  return state;
+  // 2. Perform API download only if explicitly requested (manual tap or autoLoad)
+  useEffect(() => {
+    if (!fetchRequested || isLoaded || !mediaId) return;
+
+    if (!params.phone_number_id) {
+      console.warn("⚠️ [useMessageMedia] Aborting fetch - phone_number_id is missing");
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(false);
+
+    const existing = mediaInFlight.get(cacheKey);
+
+    const request = existing || globalMediaQueue.enqueue<string>(async () => {
+      try {
+        const res = await API.get(`/chats/media/${mediaId}`, { responseType: "blob", params });
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("Blob read fail"));
+          reader.onloadend = () => {
+            let dataUrl = reader.result as string;
+            if (dataUrl && dataUrl.startsWith("data:application/octet-stream;")) {
+              if (messageType === "image") {
+                dataUrl = dataUrl.replace("data:application/octet-stream;", "data:image/jpeg;");
+              } else if (messageType === "video") {
+                dataUrl = dataUrl.replace("data:application/octet-stream;", "data:video/mp4;");
+              } else if (messageType === "audio") {
+                dataUrl = dataUrl.replace("data:application/octet-stream;", "data:audio/mpeg;");
+              }
+            }
+            resolve(dataUrl || "");
+          };
+          reader.readAsDataURL(res.data);
+        });
+      } catch (fetchErr) {
+        mediaFailureCounts.set(cacheKey, (mediaFailureCounts.get(cacheKey) || 0) + 1);
+        throw fetchErr;
+      }
+    }).then(async (dataUrl) => {
+      if (dataUrl) {
+        mediaUrlCache.set(cacheKey, dataUrl);
+        try {
+          await setMediaCache(cacheKey, dataUrl);
+        } catch (_) { }
+        mediaFailureCounts.delete(cacheKey);
+      }
+      return dataUrl || "";
+    }).catch(() => {
+      mediaFailureCounts.set(cacheKey, (mediaFailureCounts.get(cacheKey) || 0) + 1);
+      return "";
+    });
+
+    if (!existing) {
+      mediaInFlight.set(cacheKey, request);
+      request.finally(() => mediaInFlight.delete(cacheKey));
+    }
+
+    request
+      .then((downloadedUrl: string) => {
+        if (!mountedRef.current) return;
+        if (downloadedUrl) {
+          setUrl(downloadedUrl);
+          setIsLoaded(true);
+          setLoading(false);
+          setError(false);
+        } else {
+          setLoading(false);
+          setError(true);
+        }
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        setLoading(false);
+        setError(true);
+      });
+  }, [fetchRequested, isLoaded, mediaId, cacheKey, params, messageType]);
+
+  const loadMedia = useCallback(() => {
+    setError(false);
+    setFetchRequested(true);
+  }, []);
+
+  return {
+    url,
+    loading,
+    error,
+    isLoaded,
+    loadMedia,
+  };
 }

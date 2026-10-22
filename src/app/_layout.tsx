@@ -1,3 +1,4 @@
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "../../global.css";
 import { Stack, useSegments, useRouter } from "expo-router";
 import { useFonts } from "expo-font";
@@ -37,6 +38,7 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
   const isAuthenticated = useSyncStore((state) => state.isAuthenticated);
+  const isInitialSync = useSyncStore((state) => state.isInitialSync);
 
   useEffect(() => {
     const init = async () => {
@@ -52,17 +54,24 @@ export default function RootLayout() {
 
     const currentSegment = segments[0];
     const inAuthGroup = currentSegment === 'login';
+    const inSyncGroup = currentSegment === 'sync';
 
     if (!isAuthenticated) {
       if (!inAuthGroup) {
         router.replace('/login');
       }
     } else {
-      if (inAuthGroup) {
-        router.replace('/');
+      if (isInitialSync) {
+        if (!inSyncGroup) {
+          router.replace('/sync');
+        }
+      } else {
+        if (inAuthGroup || inSyncGroup) {
+          router.replace('/');
+        }
       }
     }
-  }, [isAuthenticated, segments[0], dbInitialized, loaded]);
+  }, [isAuthenticated, isInitialSync, segments[0], dbInitialized, loaded]);
 
   const isDark = useThemeStore((state) => state.isDark);
   const themeMode = useThemeStore((state) => state.themeMode);
@@ -87,15 +96,33 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style={isDark ? "light" : "dark"} />
-      <QueryClientProvider client={queryClient}>
-        <SocketManager />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-        </Stack>
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <QueryClientProvider client={queryClient}>
+          <SocketManager />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              animation: 'slide_from_right',
+              animationDuration: 200,
+              contentStyle: { backgroundColor: isDark ? '#0b121c' : '#efeae2' },
+            }}
+          >
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="sync" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="chat/[id]"
+              options={{
+                headerShown: false,
+                animation: 'slide_from_right',
+                animationDuration: 200,
+              }}
+            />
+          </Stack>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

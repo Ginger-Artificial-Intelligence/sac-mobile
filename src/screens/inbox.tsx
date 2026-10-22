@@ -7,7 +7,7 @@ import { Icon } from "../components/ui/Icon";
 import { LoadingSpinner } from "../components/ui/Loading";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useState, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import { useSyncStore, Chat } from "../store/syncStore";
 import { FlashList } from "@shopify/flash-list";
 import API from "../config/axios";
@@ -140,7 +140,11 @@ const ChatRow = memo(
         onPress={onPress}
         onLongPress={onLongPress}
         delayLongPress={350}
-        style={({ pressed }) => ({
+        android_ripple={{
+          color: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 50, 107, 0.08)",
+          foreground: true,
+        }}
+        style={{
           width: "100%",
           minHeight: 72,
 
@@ -154,12 +158,8 @@ const ChatRow = memo(
             ? isDark
               ? "#1a293d"
               : "#e8eeff"
-            : pressed
-              ? isDark
-                ? "rgba(255,255,255,0.06)"
-                : "rgba(0,50,107,0.05)"
-              : colors.surfaceContainerLowest,
-        })}
+            : colors.surfaceContainerLowest,
+        }}
       >
         {/* Selection */}
         {selecting && (
@@ -364,7 +364,18 @@ const ChatRow = memo(
         </View>
       </Pressable>
     );
-  }
+  },
+  (prev, next) =>
+    prev.selected === next.selected &&
+    prev.selecting === next.selecting &&
+    prev.chat.id === next.chat.id &&
+    prev.chat.updatedAt === next.chat.updatedAt &&
+    prev.chat.unreadCount === next.chat.unreadCount &&
+    prev.chat.lastMessage === next.chat.lastMessage &&
+    prev.chat.pinned === next.chat.pinned &&
+    prev.chat.isStarred === next.chat.isStarred &&
+    prev.chat.name === next.chat.name &&
+    prev.chat.avatar === next.chat.avatar
 );
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -382,6 +393,9 @@ export default function InboxScreen() {
   const selectedIds = useSyncStore((state) => state.selectedChatIds);
   const setSelectedIds = useSyncStore((state) => state.setSelectedChatIds);
   const clearSelection = useSyncStore((state) => state.clearSelection);
+  const isLoadingMoreChats = useSyncStore((state) => state.isLoadingMoreChats);
+  const hasMoreChats = useSyncStore((state) => state.hasMoreChats);
+  const loadMoreChats = useSyncStore((state) => state.loadMoreChats);
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activeFilter, setActiveFilter] = useState<FilterTab>("All");
@@ -536,87 +550,128 @@ export default function InboxScreen() {
     },
   ];
 
-  // ── Filtering (local-first, fast property checks without JSON.parse) ─────
+  // ── Filtering (single pass, local-first, fast property checks without JSON.parse) ─────
   const filteredChats = useMemo(() => {
-    let list = chats;
+    const hasTabFilter = activeFilter !== 'All' && activeFilter !== 'Referral';
+    const hasChannel = selectedChannel !== 'All';
+    const hasAccount = selectedAccount !== 'All';
+    const hasLead = selectedLeadStatus !== 'All';
+    const hasDept = selectedDepartment !== 'All';
+    const hasQA = selectedQuickAssist !== 'All';
+    const hasCamp = selectedCampaign !== 'All';
+    const cleanSearch = searchText.trim().toLowerCase();
+    const hasSearch = cleanSearch.length > 0;
 
-    // Tab filter
-    if (activeFilter === 'Unread') list = list.filter((c) => c.unreadCount > 0);
-    else if (activeFilter === 'Open') list = list.filter((c) => c.isOpen);
-    else if (activeFilter === 'Starred') list = list.filter((c) => c.isStarred);
-    else if (activeFilter === 'Assigned') list = list.filter((c) => Boolean(c.assignedToName));
-
-    // Dropdown filters
-    if (selectedChannel !== "All") {
-      list = list.filter((c) => c.channel?.toLowerCase() === selectedChannel.toLowerCase());
-    }
-    if (selectedAccount !== "All") {
-      list = list.filter((c) => c.socialAccountId === selectedAccount || c.accountId === selectedAccount);
-    }
-    if (selectedLeadStatus !== "All") {
-      list = list.filter((c) => c.leadStage?.toLowerCase() === selectedLeadStatus.toLowerCase());
-    }
-    if (selectedDepartment !== "All") {
-      list = list.filter((c) => c.departmentId === selectedDepartment);
-    }
-    if (selectedQuickAssist !== "All") {
-      list = list.filter((c) => c.quickAssistKeyword?.toLowerCase() === selectedQuickAssist.toLowerCase());
-    }
-    if (selectedCampaign !== "All") {
-      list = list.filter((c) => c.campaignId === selectedCampaign);
+    if (!hasTabFilter && !hasChannel && !hasAccount && !hasLead && !hasDept && !hasQA && !hasCamp && !hasSearch) {
+      return chats;
     }
 
-    // Search
-    if (searchText.trim()) {
-      const q = searchText.toLowerCase();
-      list = list.filter((c) =>
-        c.name?.toLowerCase().includes(q) ||
-        c.phoneNumber?.toLowerCase().includes(q) ||
-        c.lastMessage?.toLowerCase().includes(q)
-      );
-    }
+    const channelLower = hasChannel ? selectedChannel.toLowerCase() : '';
+    const leadLower = hasLead ? selectedLeadStatus.toLowerCase() : '';
+    const qaLower = hasQA ? selectedQuickAssist.toLowerCase() : '';
 
-    return list;
+    return chats.filter((c) => {
+      // Tab filter
+      if (activeFilter === 'Unread' && c.unreadCount <= 0) return false;
+      if (activeFilter === 'Open' && !c.isOpen) return false;
+      if (activeFilter === 'Starred' && !c.isStarred) return false;
+      if (activeFilter === 'Assigned' && !c.assignedToName) return false;
+
+      // Dropdown filters
+      if (hasChannel && c.channel?.toLowerCase() !== channelLower) return false;
+      if (hasAccount && c.socialAccountId !== selectedAccount && c.accountId !== selectedAccount) return false;
+      if (hasLead && c.leadStage?.toLowerCase() !== leadLower) return false;
+      if (hasDept && c.departmentId !== selectedDepartment) return false;
+      if (hasQA && c.quickAssistKeyword?.toLowerCase() !== qaLower) return false;
+      if (hasCamp && c.campaignId !== selectedCampaign) return false;
+
+      // Search
+      if (hasSearch) {
+        const matchesName = c.name?.toLowerCase().includes(cleanSearch);
+        const matchesPhone = c.phoneNumber?.toLowerCase().includes(cleanSearch);
+        const matchesLast = c.lastMessage?.toLowerCase().includes(cleanSearch);
+        if (!matchesName && !matchesPhone && !matchesLast) return false;
+      }
+
+      return true;
+    });
   }, [
     chats, activeFilter, searchText,
     selectedChannel, selectedAccount, selectedDepartment,
     selectedQuickAssist, selectedLeadStatus, selectedCampaign
   ]);
 
-  // ── Pull-to-refresh (max 5s UI spinner, background sync continues) ───────
+  // ── Pull-to-refresh: Fast local SQLite reload (<100ms) without heavy sync APIs ───────
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
     let isMounted = true;
-    const timer = setTimeout(() => {
-      if (isMounted) setIsRefreshing(false);
-    }, 5000);
-
     (async () => {
       try {
-        await syncWithBackend();
-        try {
-          await useSyncStore.getState().fetchAndCacheFilterOptions();
-        } catch (_) { }
+        await loadChats();
       } catch (err) {
-        console.warn("Background inbox sync error:", err);
+        console.warn("Inbox local reload error:", err);
       } finally {
-        clearTimeout(timer);
         if (isMounted) setIsRefreshing(false);
       }
     })();
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
     };
-  }, [syncWithBackend]);
+  }, [loadChats]);
 
   // ── Multi-select ───────────────────────────────────────────────────────────
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setSelectedIds(next);
-  };
+  const toggleSelect = useCallback((id: string) => {
+    const current = useSyncStore.getState().selectedChatIds;
+    const next = new Set(current);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    useSyncStore.getState().setSelectedChatIds(next);
+  }, []);
+
+  const isNavigatingRef = useRef(false);
+
+  const handleChatPress = useCallback((chat: Chat) => {
+    if (selectedIds.size > 0) {
+      toggleSelect(chat.id);
+      return;
+    }
+
+    // Debounce / Navigation lock: prevent opening multiple chat screens on rapid clicks
+    if (isNavigatingRef.current) return;
+    isNavigatingRef.current = true;
+    setTimeout(() => {
+      isNavigatingRef.current = false;
+    }, 600);
+
+    router.push({
+      pathname: `/chat/${chat.id}`,
+      params: {
+        name: chat.name,
+        avatar: chat.avatar || '',
+        channel: chat.channel || '',
+        accountId: chat.accountId || '',
+        phoneNumber: chat.phoneNumber || '',
+      },
+    } as any);
+  }, [selectedIds.size, toggleSelect, router]);
+
+  const handleChatLongPress = useCallback((chat: Chat) => {
+    toggleSelect(chat.id);
+  }, [toggleSelect]);
+
+  const renderItem = useCallback(({ item: chat }: { item: Chat }) => (
+    <ChatRow
+      chat={chat}
+      selected={selectedIds.has(chat.id)}
+      selecting={selectedIds.size > 0}
+      onPress={() => handleChatPress(chat)}
+      onLongPress={() => handleChatLongPress(chat)}
+    />
+  ), [selectedIds, handleChatPress, handleChatLongPress]);
 
   const bulkSetStarred = useSyncStore((state) => state.bulkSetStarred);
   const bulkSetPinned = useSyncStore((state) => state.bulkSetPinned);
@@ -692,6 +747,14 @@ export default function InboxScreen() {
       }))}
     />
   );
+
+  const handleEndReached = useCallback(() => {
+    // Stop background sync / load more if hasMoreChats is false
+    if (!hasMoreChats || isLoadingMoreChats || searchText.trim().length > 0) {
+      return;
+    }
+    loadMoreChats();
+  }, [searchText, isLoadingMoreChats, hasMoreChats, loadMoreChats]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -791,9 +854,18 @@ export default function InboxScreen() {
             showsVerticalScrollIndicator={false}
             onRefresh={onRefresh}
             refreshing={isRefreshing}
+            onEndReached={hasMoreChats ? handleEndReached : undefined}
+            onEndReachedThreshold={0.4}
 
             ListFooterComponent={
-              isSyncing && chats.length > 0 ? (
+              isLoadingMoreChats ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 }}>
+                  <LoadingSpinner size={18} />
+                  <Text style={{ fontSize: 13, color: '#9aa0a6' }}>
+                    Loading more chats…
+                  </Text>
+                </View>
+              ) : isSyncing && chats.length > 0 ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
                   <LoadingSpinner size={16} />
                   <Text style={{ fontSize: 12, color: '#9aa0a6' }}>
@@ -802,29 +874,7 @@ export default function InboxScreen() {
                 </View>
               ) : null
             }
-            renderItem={({ item: chat }) => (
-              <ChatRow
-                chat={chat}
-                selected={selectedIds.has(chat.id)}
-                selecting={selecting}
-                onPress={() => {
-                  if (selecting) {
-                    toggleSelect(chat.id);
-                  } else {
-                    router.push({
-                      pathname: `/chat/${chat.id}`,
-                      params: {
-                        name: chat.name,
-                        avatar: chat.avatar || '',
-                        channel: chat.channel || '',
-                        accountId: chat.accountId || '',
-                      },
-                    } as any);
-                  }
-                }}
-                onLongPress={() => toggleSelect(chat.id)}
-              />
-            )}
+            renderItem={renderItem}
           />
         )}
       </View>
