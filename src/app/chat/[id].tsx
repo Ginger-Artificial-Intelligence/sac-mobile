@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
 import { useSyncStore, Message, extractMessages, mapApiMessage } from "../../store/syncStore";
 import API from "../../config/axios";
+import { useSocialProfile } from "../../hooks/useSocialProfile";
 import { upsertMessageBatch } from "../../db/client";
 import { MessageRenderer } from "../../components/whatsapp/MessageRenderer";
 import { SwipeToReplyWrapper } from "../../components/whatsapp/SwipeToReplyWrapper";
@@ -121,6 +122,7 @@ export default function ChatScreen() {
   const chatAccountId = params.accountId || currentChat?.accountId || "";
   const chatPhoneNumber = params.phoneNumber || currentChat?.phoneNumber || "";
   const chatChannel = params.channel || currentChat?.channel || "whatsapp";
+  const socialProfile = useSocialProfile(chatId, chatChannel);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -364,9 +366,16 @@ export default function ChatScreen() {
               <Icon name="arrow-back" size={24} color={colors.onSurface} />
             </Pressable>
             <View className="flex-row items-center gap-3">
-              <Avatar fallback={chatAvatar} size={40} />
+              <Avatar
+                source={socialProfile?.profilePic ? { uri: socialProfile.profilePic } : undefined}
+                fallback={chatAvatar}
+                size={40}
+              />
               <View>
                 <Text style={{ fontSize: 16.5, fontWeight: '700', color: colors.onSurface }}>{chatName}</Text>
+                {!!socialProfile?.username && (
+                  <Text style={{ fontSize: 12, color: colors.onSurfaceVariant }}>@{socialProfile.username}</Text>
+                )}
                 {isChatOpen && (
                   <Text style={{ fontSize: 12, color: isDark ? "#4ade80" : "#10b981", fontWeight: "600" }}>Open</Text>
                 )}
