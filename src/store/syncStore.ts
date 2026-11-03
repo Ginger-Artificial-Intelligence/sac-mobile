@@ -222,7 +222,8 @@ export function mapApiChat(c: any): Chat {
     channel: c.channel || null,
     lastMessage: c.lastMessage || c.last_message || null,
     unreadCount: Number(c.unreadCount ?? 0),
-    avatar: c.avatar || initials,
+    // Real Messenger/Instagram profile picture saved on the chat by the backend; falls back to initials.
+    avatar: c.socialProfile?.profilePic || c.chat?.socialProfile?.profilePic || c.avatar || initials,
     pinned: Boolean(c.isPinned),
     isStarred: Boolean(c.isStarred),
     isOpen: Boolean(c.isOpen),
@@ -234,7 +235,7 @@ export function mapApiChat(c: any): Chat {
     campaignId: resolvedCampId,
     updatedAt: typeof ts === 'number' ? new Date(ts).toISOString() : String(ts),
     isBlocked: Boolean(c.isBlocked),
-    username: c.username || null,
+    username: c.socialProfile?.username || c.chat?.socialProfile?.username || c.username || null,
     isCampaignChat: Boolean(c.isCampaignChat),
     accountId: resolvedSocialAccountId,
     rawJson: c ? JSON.stringify(c) : null,

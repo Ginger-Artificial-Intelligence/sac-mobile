@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import { useSyncStore, Chat } from "../store/syncStore";
+import { refreshExpiredAvatar } from "../hooks/useSocialProfile";
 import { FlashList } from "@shopify/flash-list";
 import API from "../config/axios";
 import { NativeDropdown } from "../components/ui/NativeDropdown";
@@ -224,6 +225,7 @@ const ChatRow = memo(
               }}
               contentFit="cover"
               cachePolicy="memory-disk"
+              onError={() => refreshExpiredAvatar(chat.id, chat.avatar)}
             />
           ) : (
             <Text

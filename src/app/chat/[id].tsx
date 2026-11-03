@@ -122,7 +122,7 @@ export default function ChatScreen() {
   const chatAccountId = params.accountId || currentChat?.accountId || "";
   const chatPhoneNumber = params.phoneNumber || currentChat?.phoneNumber || "";
   const chatChannel = params.channel || currentChat?.channel || "whatsapp";
-  const socialProfile = useSocialProfile(chatId, chatChannel);
+  useSocialProfile(chatId, chatChannel, currentChat?.avatar);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -367,14 +367,14 @@ export default function ChatScreen() {
             </Pressable>
             <View className="flex-row items-center gap-3">
               <Avatar
-                source={socialProfile?.profilePic ? { uri: socialProfile.profilePic } : undefined}
+                source={chatAvatar.startsWith('http') ? { uri: chatAvatar } : undefined}
                 fallback={chatAvatar}
                 size={40}
               />
               <View>
                 <Text style={{ fontSize: 16.5, fontWeight: '700', color: colors.onSurface }}>{chatName}</Text>
-                {!!socialProfile?.username && (
-                  <Text style={{ fontSize: 12, color: colors.onSurfaceVariant }}>@{socialProfile.username}</Text>
+                {(chatChannel === 'instagram' || chatChannel === 'messenger') && !!currentChat?.username && (
+                  <Text style={{ fontSize: 12, color: colors.onSurfaceVariant }}>@{currentChat.username}</Text>
                 )}
                 {isChatOpen && (
                   <Text style={{ fontSize: 12, color: isDark ? "#4ade80" : "#10b981", fontWeight: "600" }}>Open</Text>
