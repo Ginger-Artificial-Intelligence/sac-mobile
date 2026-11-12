@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { storage } from '../store/mmkv';
+import { getToken } from '../store/secureToken';
 import { BASE_URL } from '../constants/api';
 import { mmkvKeys } from '../constants/storage';
 
@@ -11,7 +12,7 @@ const API = axios.create({
 API.interceptors.request.use(
   async (config) => {
     try {
-      let token = storage.getString(mmkvKeys.USER_TOKEN);
+      let token = getToken();
       if (!token) {
         try {
           const { useSyncStore } = require('../store/syncStore');

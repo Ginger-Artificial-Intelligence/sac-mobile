@@ -7,7 +7,8 @@ import { Icon } from "../components/ui/Icon";
 import { LoadingSpinner } from "../components/ui/Loading";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, memo, useRef, useDeferredValue } from "react";
+import { useNewContactSheet } from "../store/newContactStore";
 import { useSyncStore, Chat } from "../store/syncStore";
 import { refreshExpiredAvatar } from "../hooks/useSocialProfile";
 import { FlashList } from "@shopify/flash-list";
@@ -19,9 +20,9 @@ import { HapticPressable } from "@/components/ui/HapticPressable";
 import { Image } from "expo-image";
 
 // ─── Tab filter mapping (matches ChatFilterTab from v1) ───────────────────────
-type FilterTab = "All" | "Unread" | "Open" | "Starred" | "Referral" | "Assigned";
+type FilterTab = "All" | "Unread" | "Open" | "Closed" | "Starred" | "Referral" | "Assigned";
 
-const TAB_FILTERS: FilterTab[] = ["All", "Unread", "Open", "Starred", "Referral", "Assigned"];
+const TAB_FILTERS: FilterTab[] = ["All", "Unread", "Open", "Closed", "Starred", "Referral", "Assigned"];
 
 // ─── Selected action bar when multi-select is active ─────────────────────────
 function SelectionBar({
@@ -63,6 +64,14 @@ function SelectionBar({
       </Pressable>
     </View>
   );
+}
+
+// Lead statuses are configured per workspace, so colour by meaning: lost/fake red, won green, rest blue
+function leadChipColors(status: string, isDark: boolean) {
+  const s = status.toLowerCase();
+  if (/lost|fake/.test(s)) return { bg: "rgba(244, 67, 54, 0.12)", text: "#f44336", border: "rgba(244, 67, 54, 0.35)" };
+  if (/won/.test(s)) return { bg: "rgba(34, 197, 94, 0.14)", text: isDark ? "#4ade80" : "#15803d", border: "rgba(34, 197, 94, 0.4)" };
+  return { bg: "rgba(59, 130, 246, 0.12)", text: isDark ? "#93c5fd" : "#1d4ed8", border: "rgba(59, 130, 246, 0.35)" };
 }
 
 // ─── Chat Avatar (image or initials) ─────────────────────────────────────────
@@ -139,6 +148,7 @@ const ChatRow = memo(
     return (
       <Pressable
         onPress={onPress}
+        onPressIn={() => useSyncStore.getState().prefetchMessages(chat.id)}
         onLongPress={onLongPress}
         delayLongPress={350}
         android_ripple={{
@@ -228,15 +238,19 @@ const ChatRow = memo(
               onError={() => refreshExpiredAvatar(chat.id, chat.avatar)}
             />
           ) : (
-            <Text
-              style={{
-                fontSize: 19,
-                fontWeight: "700",
-                color: colors.primary,
-              }}
-            >
-              {initial}
-            </Text>
+            chat.isGroup ? (
+              <Icon name="groups" size={28} color="#25D366" />
+            ) : (
+              <Text
+                style={{
+                  fontSize: 19,
+                  fontWeight: "700",
+                  color: colors.primary,
+                }}
+              >
+                {initial}
+              </Text>
+            )
           )}
         </View>
 
@@ -311,14 +325,48 @@ const ChatRow = memo(
                 : "400",
             }}
           >
+            {chat.isGroup ? "Group · " : ""}
             {chat.lastMessage || " "}
           </Text>
+
+          {/* Status chips: lead status, quick-assist keyword, open/closed, SLA / escalation */}
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+            {!!chat.leadStage && (() => {
+              const lead = leadChipColors(chat.leadStage!, isDark);
+              return (
+                <View style={{ backgroundColor: lead.bg, borderColor: lead.border, borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 9, fontWeight: "800", color: lead.text, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    {chat.leadStage}
+                  </Text>
+                </View>
+              );
+            })()}
+            {!!chat.quickAssistKeyword && (
+              <Text numberOfLines={1} style={{ fontSize: 11, color: colors.outline, maxWidth: 110 }}>
+                {chat.quickAssistKeyword}
+              </Text>
+            )}
+            <Text style={{ fontSize: 11, fontWeight: "500", color: chat.isOpen ? "#16a34a" : "#d97706" }}>
+              {chat.isOpen ? "Open" : "Closed"}
+            </Text>
+            {chat.replyTimeoutStatus === "escalated" ? (
+              <View style={{ backgroundColor: "rgba(244, 67, 54, 0.12)", borderColor: "rgba(244, 67, 54, 0.4)", borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 9, fontWeight: "800", color: "#f44336", textTransform: "uppercase" }}>Escalated</Text>
+              </View>
+            ) : chat.replyTimeoutStatus === "pending" ? (
+              <View style={{ backgroundColor: "rgba(255, 152, 0, 0.12)", borderColor: "rgba(255, 152, 0, 0.3)", borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 9, fontWeight: "700", color: "#ff9800", textTransform: "uppercase" }}>
+                  SLA: {chat.slaType || "FRT"}
+                </Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {/* Unread / pin */}
         <View
           style={{
-            width: 28,
+            minWidth: 28,
 
             marginLeft: 8,
 
@@ -326,8 +374,16 @@ const ChatRow = memo(
             justifyContent: "center",
 
             flexShrink: 0,
+            gap: 6,
           }}
         >
+          {/* Star and pin show alongside the unread badge, not instead of it */}
+          {(chat.isStarred || chat.pinned) && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              {chat.isStarred && <Icon name="star" size={16} color="#FFC107" />}
+              {chat.pinned && <Icon name="push-pin" size={16} color={colors.outline} />}
+            </View>
+          )}
           {hasUnread ? (
             <View
               style={{
@@ -356,12 +412,6 @@ const ChatRow = memo(
                   : chat.unreadCount}
               </Text>
             </View>
-          ) : chat.pinned ? (
-            <Icon
-              name="push-pin"
-              size={17}
-              color={colors.outline}
-            />
           ) : null}
         </View>
       </Pressable>
@@ -377,6 +427,12 @@ const ChatRow = memo(
     prev.chat.pinned === next.chat.pinned &&
     prev.chat.isStarred === next.chat.isStarred &&
     prev.chat.name === next.chat.name &&
+    prev.chat.isGroup === next.chat.isGroup &&
+    prev.chat.leadStage === next.chat.leadStage &&
+    prev.chat.isOpen === next.chat.isOpen &&
+    prev.chat.quickAssistKeyword === next.chat.quickAssistKeyword &&
+    prev.chat.replyTimeoutStatus === next.chat.replyTimeoutStatus &&
+    prev.chat.slaType === next.chat.slaType &&
     prev.chat.avatar === next.chat.avatar
 );
 
@@ -553,7 +609,23 @@ export default function InboxScreen() {
   ];
 
   // ── Filtering (single pass, local-first, fast property checks without JSON.parse) ─────
+  // The pill / dropdown label / search box update on the next frame; the (heavier) list re-filter
+  // follows at lower priority instead of blocking the tap
+  const filterInput = useMemo(
+    () => ({
+      activeFilter, searchText, selectedChannel, selectedAccount,
+      selectedDepartment, selectedQuickAssist, selectedLeadStatus, selectedCampaign,
+    }),
+    [activeFilter, searchText, selectedChannel, selectedAccount,
+      selectedDepartment, selectedQuickAssist, selectedLeadStatus, selectedCampaign]
+  );
+  const deferredFilters = useDeferredValue(filterInput);
+
   const filteredChats = useMemo(() => {
+    const {
+      activeFilter, searchText, selectedChannel, selectedAccount,
+      selectedDepartment, selectedQuickAssist, selectedLeadStatus, selectedCampaign,
+    } = deferredFilters;
     const hasTabFilter = activeFilter !== 'All' && activeFilter !== 'Referral';
     const hasChannel = selectedChannel !== 'All';
     const hasAccount = selectedAccount !== 'All';
@@ -576,6 +648,7 @@ export default function InboxScreen() {
       // Tab filter
       if (activeFilter === 'Unread' && c.unreadCount <= 0) return false;
       if (activeFilter === 'Open' && !c.isOpen) return false;
+      if (activeFilter === 'Closed' && c.isOpen) return false; // closed = isOpen false/missing, as on the web
       if (activeFilter === 'Starred' && !c.isStarred) return false;
       if (activeFilter === 'Assigned' && !c.assignedToName) return false;
 
@@ -597,11 +670,7 @@ export default function InboxScreen() {
 
       return true;
     });
-  }, [
-    chats, activeFilter, searchText,
-    selectedChannel, selectedAccount, selectedDepartment,
-    selectedQuickAssist, selectedLeadStatus, selectedCampaign
-  ]);
+  }, [chats, deferredFilters]);
 
   // ── Pull-to-refresh: Fast local SQLite reload (<100ms) without heavy sync APIs ───────
   const onRefresh = useCallback(() => {
@@ -692,12 +761,17 @@ export default function InboxScreen() {
   }, [chats, bulkSetStarred]);
 
   // ── Bulk actions ───────────────────────────────────────────────────────────
+  // If every selected chat already has the flag, the button removes it; otherwise it sets it on all
   const bulkStar = () => {
-    bulkSetStarred(Array.from(selectedIds), true);
+    const ids = Array.from(selectedIds);
+    const allOn = ids.every((id) => chats.find((c) => c.id === id)?.isStarred);
+    bulkSetStarred(ids, !allOn);
   };
 
   const bulkPin = () => {
-    bulkSetPinned(Array.from(selectedIds), true);
+    const ids = Array.from(selectedIds);
+    const allOn = ids.every((id) => chats.find((c) => c.id === id)?.pinned);
+    bulkSetPinned(ids, !allOn);
   };
 
   const isDark = useThemeStore((state) => state.isDark);
@@ -946,7 +1020,7 @@ export default function InboxScreen() {
                 <Pressable
                   onPress={() => {
                     setFabExpanded(false);
-                    router.setParams({ tab: 'contacts' });
+                    useNewContactSheet.getState().open('contact');
                   }}
                   style={{
                     width: 42,
@@ -980,7 +1054,7 @@ export default function InboxScreen() {
                 <Pressable
                   onPress={() => {
                     setFabExpanded(false);
-                    router.setParams({ tab: 'contacts' });
+                    useNewContactSheet.getState().open('chat');
                   }}
                   style={{
                     width: 42,

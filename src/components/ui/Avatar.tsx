@@ -22,6 +22,7 @@ export function Avatar({ source, fallback, size = 40, className, ...props }: Ava
         <Image
           source={source}
           style={{ width: size, height: size }}
+          resizeMode="cover"
           onError={() => setHasError(true)}
           {...props}
         />

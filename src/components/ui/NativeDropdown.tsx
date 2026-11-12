@@ -44,19 +44,32 @@ export function NativeDropdown({
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
 
+  // Measure first, then open, so the menu appears at its final position instead of at a default
+  // spot and then jumping. The timer is a safety net in case the measure callback never fires.
   const handleOpen = () => {
-    if (triggerRef.current) {
-      triggerRef.current.measureInWindow((x, y, width, height) => {
-        if (typeof x === 'number' && typeof y === 'number') {
-          setDropdownPosition({
-            x: x,
-            y: y + (height || 0) + 4,
-            width: width || 140,
-          });
-        }
-      });
+    const node = triggerRef.current;
+    if (!node) {
+      onRequestOpen();
+      return;
     }
-    onRequestOpen();
+    let opened = false;
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      onRequestOpen();
+    };
+    const fallback = setTimeout(open, 80);
+    node.measureInWindow((x, y, width, height) => {
+      clearTimeout(fallback);
+      if (typeof x === 'number' && typeof y === 'number') {
+        setDropdownPosition({
+          x: x,
+          y: y + (height || 0) + 4,
+          width: width || 140,
+        });
+      }
+      open();
+    });
   };
 
   const screenWidth = Dimensions.get('window').width;
@@ -86,7 +99,7 @@ export function NativeDropdown({
         visible={expanded}
         transparent
         statusBarTranslucent
-        animationType="fade"
+        animationType="none"
         onRequestClose={onDismissRequest}
       >
         <Pressable style={styles.overlay} onPress={onDismissRequest}>

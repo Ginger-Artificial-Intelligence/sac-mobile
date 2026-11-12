@@ -2,7 +2,7 @@
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 
-const GATEWAY_URL = 'https://eazycrm-apigateway.scribbleandconnect.com';
+import { GATEWAY_URL, SOCKET_ORIGIN } from '../constants/api';
 
 let globalSocket: Socket | null = null;
 
@@ -26,7 +26,7 @@ export const connectSocket = (token: string, tenantId: string): Socket => {
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
     extraHeaders: {
-      origin: 'https://eazycrm.scribbleandconnect.com'
+      origin: SOCKET_ORIGIN
     }
   }) as Socket;
 
@@ -35,8 +35,7 @@ export const connectSocket = (token: string, tenantId: string): Socket => {
   });
 
   socketInstance.on('connect_error', (err: any) => {
-    console.dir({ err }, { depth: null })
-    console.error(`❌ [SOCKET] Connection Error: ${err}`);
+    console.error(`❌ [SOCKET] Connection Error: ${err?.message ?? err}`);
   });
 
   socketInstance.on('reconnect_attempt', (attempt: number) => {

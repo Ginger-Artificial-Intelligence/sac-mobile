@@ -39,6 +39,11 @@ export async function initializeDatabase() {
         username TEXT,
         is_blocked INTEGER DEFAULT 0 NOT NULL,
         is_campaign_chat INTEGER DEFAULT 0 NOT NULL,
+        last_msg_received_at TEXT,
+        is_group INTEGER DEFAULT 0 NOT NULL,
+        wa_group_id TEXT,
+        reply_timeout_status TEXT,
+        sla_type TEXT,
         raw_json TEXT
       );
     `);
@@ -59,6 +64,11 @@ export async function initializeDatabase() {
       { name: 'username', type: 'TEXT' },
       { name: 'is_blocked', type: 'INTEGER DEFAULT 0 NOT NULL' },
       { name: 'is_campaign_chat', type: 'INTEGER DEFAULT 0 NOT NULL' },
+      { name: 'last_msg_received_at', type: 'TEXT' },
+      { name: 'is_group', type: 'INTEGER DEFAULT 0 NOT NULL' },
+      { name: 'wa_group_id', type: 'TEXT' },
+      { name: 'reply_timeout_status', type: 'TEXT' },
+      { name: 'sla_type', type: 'TEXT' },
       { name: 'raw_json', type: 'TEXT' }
     ];
     for (const col of chatCols) {
@@ -121,13 +131,6 @@ export async function initializeDatabase() {
         data_url TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
-    `);
-
-    // Clean up legacy mock records from previous sessions
-    await expoDb.execAsync(`
-      DELETE FROM chats WHERE id IN ('1', '2', '3', '4', '5', '6');
-      DELETE FROM contacts WHERE id IN ('1', '2', '3', '4', '5', '6');
-      DELETE FROM messages WHERE id IN ('m1', 'm2') OR chat_id IN ('1', '2', '3', '4', '5', '6');
     `);
 
     // ── 5. Compound Indexes (Created after tables exist) ─────────────────────
@@ -202,6 +205,11 @@ export async function upsertChatBatch(chatList: Array<typeof schema.chats.$infer
               username: chat.username,
               isBlocked: chat.isBlocked,
               isCampaignChat: chat.isCampaignChat,
+              lastMsgReceivedAt: chat.lastMsgReceivedAt,
+              isGroup: chat.isGroup,
+              waGroupId: chat.waGroupId,
+              replyTimeoutStatus: chat.replyTimeoutStatus,
+              slaType: chat.slaType,
               rawJson: chat.rawJson,
             },
           });

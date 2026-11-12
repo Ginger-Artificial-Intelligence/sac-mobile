@@ -1,10 +1,25 @@
 import { create } from 'zustand';
+import { Alert } from 'react-native';
 import { db, upsertChatBatch, upsertMessageBatch, upsertContactBatch } from '../db/client';
 import { chats as chatsTable, messages as messagesTable, contacts as contactsTable } from '../db/schema';
-import { eq, desc, and, lt } from 'drizzle-orm';
+import { eq, desc, and, lt, notLike } from 'drizzle-orm';
 import { storage, mmkvKeys } from './mmkv';
+import { getToken, setToken, clearToken } from './secureToken';
+import { mediaPreviewLabel, uploadMediaToMeta, type PickedMedia } from '../lib/mediaUpload';
+import {
+  extractChats,
+  extractMessages,
+  extractContacts,
+  getNextChatCursor,
+  checkHasMoreChats,
+  mapApiChat,
+  mapApiMessage,
+} from '../lib/chatMapping';
 import API from '../config/axios';
 import { playNotificationSound } from '../lib/audioNotification';
+
+// Re-exported so existing imports from the store keep working
+export { extractMessages, extractContacts, getNextChatCursor, checkHasMoreChats, mapApiChat, mapApiMessage };
 
 // ─── Domain Types ────────────────────────────────────────────────────────────
 
@@ -30,7 +45,21 @@ export interface Chat {
   campaignId: string | null;
   updatedAt: string;
   isCampaignChat: boolean;
+  lastMsgReceivedAt: string | null;
+  isGroup: boolean;
+  waGroupId: string | null;
+  replyTimeoutStatus: string | null;
+  slaType: string | null;
   rawJson: string | null;
+}
+
+/** A non-text, non-file WhatsApp message: a location, or an interactive location/address request */
+export interface SpecialMessage {
+  type: 'location' | 'interactive';
+  /** the `message` object sent to the server and shown in the optimistic bubble */
+  message: Record<string, any>;
+  /** shown in the chat list as the last message */
+  label: string;
 }
 
 export interface Message {
@@ -91,182 +120,10 @@ const MAX_CHAT_PAGES = 5;      // up to 5 × 30 = 150 chats per sync
 const CHAT_PAGE_SIZE = 30;
 const MAX_MESSAGE_CHATS = 40;  // fetch messages for the 40 most recent chats
 
-/** Robustly extract array of chats from any API response shape */
-function extractChats(response: any): any[] {
-  if (Array.isArray(response?.data)) return response.data;
-  if (Array.isArray(response?.chats)) return response.chats;
-  if (Array.isArray(response?.data?.chats)) return response.data.chats;
-  return [];
-}
-
-/** Robustly extract and flatten messages array from any API response shape (including date groups) */
-export function extractMessages(response: any): any[] {
-  let list: any[] = [];
-  if (Array.isArray(response?.data?.messages)) list = response.data.messages;
-  else if (Array.isArray(response?.data)) list = response.data;
-  else if (Array.isArray(response?.messages)) list = response.messages;
-  else if (Array.isArray(response)) list = response;
-
-  // Flatten if the array contains date groups { _id: "YYYY-MM-DD", messages: [...] }
-  const flattened: any[] = [];
-  for (const item of list) {
-    if (item && Array.isArray(item.messages)) {
-      flattened.push(...item.messages);
-    } else if (item) {
-      flattened.push(item);
-    }
-  }
-  return flattened;
-}
-
-/** Robustly extract contacts array from any API response shape */
-export function extractContacts(response: any): any[] {
-  if (Array.isArray(response?.contacts)) return response.contacts;
-  if (Array.isArray(response?.data?.contacts)) return response.data.contacts;
-  if (Array.isArray(response?.data?.data)) return response.data.data;
-  if (Array.isArray(response?.data)) return response.data;
-  if (Array.isArray(response)) return response;
-  return [];
-}
-
-/** Get cursor for the next page of chats */
-export function getNextChatCursor(response: any): string | null {
-  if (!response) return null;
-
-  // Stop if explicitly hasMore is false or hasNextPage is false
-  if (response.hasMore === false || response.data?.hasMore === false) return null;
-  if (response.pageInfo?.hasMore === false || response.data?.pageInfo?.hasMore === false) return null;
-  if (response.pageInfo?.hasNextPage === false || response.data?.pageInfo?.hasNextPage === false) return null;
-
-  if (response.pageInfo?.hasNextPage || response.pageInfo?.hasMore) {
-    return response.pageInfo.startCursor || response.pageInfo.endCursor || null;
-  }
-  if (response.data?.pageInfo?.hasNextPage || response.data?.pageInfo?.hasMore) {
-    return response.data.pageInfo.startCursor || response.data.pageInfo.endCursor || null;
-  }
-  return response.nextCursor || response.meta?.nextCursor || response.data?.nextCursor || null;
-}
-
-/** Check if API response indicates there are more chats */
-export function checkHasMoreChats(response: any, rawChatsCount?: number, limit?: number): boolean {
-  if (!response) return false;
-
-  // Check explicit hasMore / hasNextPage boolean flags
-  if (response.hasMore === false || response.data?.hasMore === false) return false;
-  if (response.pageInfo?.hasMore === false || response.data?.pageInfo?.hasMore === false) return false;
-  if (response.pageInfo?.hasNextPage === false || response.data?.pageInfo?.hasNextPage === false) return false;
-
-  if (response.hasMore === true || response.data?.hasMore === true) return true;
-  if (response.pageInfo?.hasMore === true || response.data?.pageInfo?.hasMore === true) return true;
-  if (response.pageInfo?.hasNextPage === true || response.data?.pageInfo?.hasNextPage === true) return true;
-
-  if (rawChatsCount !== undefined && rawChatsCount === 0) return false;
-  if (limit !== undefined && rawChatsCount !== undefined && rawChatsCount < limit) return false;
-
-  const nextCursor = getNextChatCursor(response);
-  return Boolean(nextCursor);
-}
-
-/** Map raw API chat object → local Chat */
-export function mapApiChat(c: any): Chat {
-  const id = String(c._id || c.id || Math.random().toString(36).substring(7));
-  const rawName = c.name || c.phoneNumber || c.phone_number || 'CRM User';
-  const initials = rawName ? rawName.charAt(0).toUpperCase() : '?';
-  const ts = c.lastMessageTime || c.last_message_at || c.last_msg_received_at || c.updatedAt || new Date().toISOString();
-
-  const clean = (val: any): string | null => {
-    if (val === undefined || val === null) return null;
-    const str = String(val).trim();
-    if (str === '' || str === 'undefined' || str === 'null' || str === 'NaN') return null;
-    return str;
-  };
-
-  const resolvedSocialAccountId =
-    clean(c.socialAccountId) ||
-    clean(c.social_account_id) ||
-    clean(c.accountId) ||
-    clean(c.account_id) ||
-    clean(c.rawData?.socialAccountId) ||
-    clean(c.rawData?.social_account_id) ||
-    clean(c.rawData?.accountId) ||
-    clean(c.rawData?.account_id) ||
-    clean(c.socialAccount?.phone_number_id) ||
-    clean(c.socialAccount?.phoneNumberId) ||
-    clean(c.socialAccount?.accountId) ||
-    clean(c.socialAccount?.account_id) ||
-    clean(c.sourceAccount?.phone_number_id) ||
-    clean(c.sourceAccount?.phoneNumberId) ||
-    clean(c.sourceAccount?.accountId) ||
-    clean(c.sourceAccount?.account_id) ||
-    clean(c.metadata?.phone_number_id) ||
-    clean(c.metadata?.accountId) ||
-    clean(c.metadata?.phoneNumberId) ||
-    null;
-
-  // Extract Department ID
-  const deps = c.departments || c.chat?.departments || c.department || [];
-  const firstDep = Array.isArray(deps) ? deps[0] : deps;
-  const resolvedDeptId = firstDep ? String(firstDep._id || firstDep.id || firstDep) : null;
-
-  // Extract Quick Assist Keyword
-  const qaKeyword = c.latestQuickAssistKeyword || c.chat?.latestQuickAssistKeyword || c.quickAssistKeyword || null;
-
-  // Extract Campaign ID
-  const camp = c.campaignId || c.chat?.campaignId || c.campaign || c.chat?.campaign || null;
-  const resolvedCampId = camp ? (typeof camp === 'object' ? String(camp._id || camp.id || '') : String(camp)) : null;
-
-  return {
-    id,
-    name: rawName,
-    phoneNumber: c.phoneNumber || c.phone_number || null,
-    channel: c.channel || null,
-    lastMessage: c.lastMessage || c.last_message || null,
-    unreadCount: Number(c.unreadCount ?? 0),
-    // Real Messenger/Instagram profile picture saved on the chat by the backend; falls back to initials.
-    avatar: c.socialProfile?.profilePic || c.chat?.socialProfile?.profilePic || c.avatar || initials,
-    pinned: Boolean(c.isPinned),
-    isStarred: Boolean(c.isStarred),
-    isOpen: Boolean(c.isOpen),
-    assignedToName: c.assignedTo?.name || null,
-    leadStage: c.leadInfo?.status || c.leadStage || null,
-    socialAccountId: resolvedSocialAccountId,
-    departmentId: resolvedDeptId,
-    quickAssistKeyword: qaKeyword ? String(qaKeyword) : null,
-    campaignId: resolvedCampId,
-    updatedAt: typeof ts === 'number' ? new Date(ts).toISOString() : String(ts),
-    isBlocked: Boolean(c.isBlocked),
-    username: c.socialProfile?.username || c.chat?.socialProfile?.username || c.username || null,
-    isCampaignChat: Boolean(c.isCampaignChat),
-    accountId: resolvedSocialAccountId,
-    rawJson: c ? JSON.stringify(c) : null,
-  };
-}
-
-/** Map raw API message object → local Message */
-export function mapApiMessage(m: any, chatId: string): Message {
-  const id = String(m._id || m.id || m.messageId || m.message_id || m.message?.id || Math.random().toString(36).substring(7));
-  const ts = m.createdAt || m.created_at || m.timestamp || m.message?.timestamp || new Date().toISOString();
-  const type = m.message_type || m.type || m.message?.type || 'text';
-  const isOutgoing = m.isOutgoing === true ||
-    m.fromCrm === true ||
-    String(m.flag || '').toLowerCase() === 'outgoing' ||
-    String(m.flag || '').toLowerCase() === 'send' ||
-    String(m.message?.flag || '').toLowerCase() === 'send';
-  return {
-    id,
-    chatId,
-    text: m.content || m.text || m.body || m.message?.text || m.message?.caption || '',
-    sender: isOutgoing ? 'You' : (m.senderId || 'Contact'),
-    isOutgoing,
-    type,
-    mediaUrl: m.mediaUrl || m.media_url || m.message?.image?.url || m.message?.video?.url || m.message?.audio?.url || m.message?.document?.url || null,
-    status: m.status || 'sent',
-    timestamp: typeof ts === 'number' ? new Date(ts).toISOString() : String(ts),
-    readReceipt: m.status || null,
-    isImage: type === 'image',
-    rawJson: m ? JSON.stringify(m) : null,
-  };
-}
+// Incremental refresh (foreground / socket reconnect / timer)
+const REFRESH_MIN_INTERVAL_MS = 15_000;  // ignore triggers closer together than this
+const REFRESH_MAX_CHATS = 20;            // fetch new messages for at most this many changed chats
+const REFRESH_MAX_PAGES = 3;             // pages of 50 per chat
 
 /** Upsert a chat row to SQLite */
 async function upsertChat(chat: Chat) {
@@ -296,6 +153,11 @@ async function upsertChat(chat: Chat) {
         username: chat.username,
         isBlocked: chat.isBlocked,
         isCampaignChat: chat.isCampaignChat,
+        lastMsgReceivedAt: chat.lastMsgReceivedAt,
+        isGroup: chat.isGroup,
+        waGroupId: chat.waGroupId,
+        replyTimeoutStatus: chat.replyTimeoutStatus,
+        slaType: chat.slaType,
         rawJson: chat.rawJson,
       },
     });
@@ -347,11 +209,14 @@ interface SyncState {
   userRole: string | null;
 
   updateMessageStatus: (chatId: string, messageId: string, status: string) => Promise<void>;
+  /** Remove a message that could not be sent (the "Delete" of the failed-send bar) */
+  discardFailedMessage: (chatId: string, messageId: string) => Promise<void>;
 
   // local DB reads
   loadChats: () => Promise<void>;
   loadContacts: () => Promise<void>;
   loadMessages: (chatId: string) => Promise<number>;
+  prefetchMessages: (chatId: string) => void;
   loadOlderMessages: (chatId: string, limit?: number) => Promise<number>;
   appendOlderMessages: (chatId: string, newMsgs: Message[]) => void;
 
@@ -362,7 +227,12 @@ interface SyncState {
   loadMoreChats: () => Promise<number>;
 
   // local writes (optimistic)
-  addLocalMessage: (chatId: string, text: string, replyTo?: ReplyToContext | null) => Promise<void>;
+  addLocalMessage: (
+    chatId: string,
+    text: string,
+    replyTo?: ReplyToContext | null,
+    opts?: { directSend?: boolean; media?: PickedMedia; special?: SpecialMessage }
+  ) => Promise<void>;
   addLocalContact: (contact: Omit<Contact, 'id'>) => Promise<void>;
 
   // selection & bulk actions
@@ -371,9 +241,19 @@ interface SyncState {
   bulkSetStarred: (chatIds: string[], isStarred: boolean) => Promise<void>;
   bulkSetPinned: (chatIds: string[], pinned: boolean) => Promise<void>;
 
+  // single-chat actions (optimistic, rolled back if the server refuses; return true on success)
+  patchChat: (
+    chatId: string,
+    patch: Partial<Pick<Chat, 'name' | 'isOpen' | 'isBlocked' | 'assignedToName' | 'lastMsgReceivedAt' | 'leadStage' | 'pinned' | 'isStarred'>>
+  ) => Promise<void>;
+  toggleChatOpen: (chatId: string, isOpen: boolean) => Promise<boolean>;
+  setChatBlocked: (chatId: string, isBlock: boolean) => Promise<boolean>;
+  assignChat: (chatId: string, userIdsToAssign: string[], userIdsToRemove: string[], assigneeName: string | null) => Promise<boolean>;
+
   // backend sync (called after login and periodically)
   syncData: (apiChats: Chat[], apiContacts: Contact[]) => Promise<void>;
   syncWithBackend: () => Promise<void>;
+  refreshRecent: (opts?: { force?: boolean }) => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
 
   // auth
@@ -393,6 +273,98 @@ interface SyncState {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+// Chat list order, matching the in-memory ordering: pinned first, then most recent
+const CHAT_ORDER = [desc(chatsTable.pinned), desc(chatsTable.updatedAt)] as const;
+
+// Chats we read locally but whose "mark as read" call to the server has not succeeded yet. The server
+// keeps its own unread count, so without this a refresh/sync brings the old number back.
+const pendingReadIds = new Set<string>();
+
+function markChatReadOnServer(chat: Pick<Chat, 'id' | 'channel' | 'accountId'>): Promise<void> {
+  const params: Record<string, string> = {};
+  if (chat.channel) params.channel = chat.channel;
+  if (chat.accountId) {
+    params.accountId = chat.accountId;
+    if (chat.channel === 'whatsapp') params.phone_number_id = chat.accountId;
+  }
+  return API.get(`/messages/change-status/${chat.id}`, { params })
+    .then(() => {
+      pendingReadIds.delete(chat.id);
+    })
+    .catch((e) => {
+      const status = e?.response?.status;
+      // A client error will never succeed on retry (bad id, no permission); network/5xx errors will
+      if (status && status < 500 && status !== 408 && status !== 429) pendingReadIds.delete(chat.id);
+      else pendingReadIds.add(chat.id);
+    });
+}
+
+/** Pinned first, then most recent: the order the inbox shows */
+function sortChats(chats: Chat[]): Chat[] {
+  return [...chats].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+}
+
+/**
+ * Pin and star are FLIPS on the server (`chat.isPinned = !chat.isPinned`), shared by the whole
+ * workspace. Sending a flip for a chat whose server state we mis-believed would undo the change, and
+ * a silently failed request would be reverted by the next refresh. So: flip only if needed, read the
+ * state the server reports, flip once more if it still differs, and return null if the call failed.
+ */
+async function setFlagOnServer(kind: 'pin' | 'star', chatId: string, desired: boolean, believed: boolean): Promise<boolean | null> {
+  const path = kind === 'pin' ? `/chats/toggle-chat-pin/${chatId}` : `/chats/toggle-chat-star/${chatId}`;
+  const field = kind === 'pin' ? 'isPinned' : 'isStarred';
+  let state = believed;
+  try {
+    for (let i = 0; i < 2 && state !== desired; i++) {
+      const res = await API.patch(path);
+      const reported = res.data?.chat?.[field];
+      state = typeof reported === 'boolean' ? reported : !state;
+    }
+    return state;
+  } catch (e) {
+    console.warn(`[chat] ${kind} failed for ${chatId}:`, e);
+    return null;
+  }
+}
+
+async function reconcileFlag(kind: 'pin' | 'star', ids: string[], desired: boolean, prior: Map<string, boolean>) {
+  const key = kind === 'pin' ? 'pinned' : 'isStarred';
+  const failed: string[] = [];
+  await Promise.all(
+    ids.map(async (id) => {
+      const before = prior.get(id) ?? !desired;
+      const result = await setFlagOnServer(kind, id, desired, before);
+      if (result === null) {
+        failed.push(id);
+        await useSyncStore.getState().patchChat(id, { [key]: before });
+      } else if (result !== desired) {
+        await useSyncStore.getState().patchChat(id, { [key]: result });
+      }
+    })
+  );
+  if (failed.length > 0) {
+    Alert.alert(
+      kind === 'pin' ? 'Could not change pin' : 'Could not change star',
+      `${failed.length === 1 ? 'The chat was' : `${failed.length} chats were`} left as before. You may not have permission, or you are offline.`
+    );
+  }
+}
+
+/** Server chats must not undo what the user already read here (open chat, or read-call still pending) */
+function keepReadLocally(chats: Chat[], activeChatId: string | null): Chat[] {
+  return chats.map((c) => (c.id === activeChatId || pendingReadIds.has(c.id) ? { ...c, unreadCount: 0 } : c));
+}
+
+const prefetchingMessageIds = new Set<string>();
+
+let isLoggingOut = false;
+let syncRunId = 0;
+let isRefreshing = false;
+let lastRefreshAt = 0;
+
 export const useSyncStore = create<SyncState>((set, get) => ({
   chats: [],
   contacts: [],
@@ -404,7 +376,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   lastSyncedAt: storage.getString(mmkvKeys.LAST_SYNCED_AT) || null,
   isAuthenticated: storage.getString(mmkvKeys.IS_AUTHENTICATED) === 'true',
   userEmail: storage.getString(mmkvKeys.USER_EMAIL) || null,
-  userToken: storage.getString(mmkvKeys.USER_TOKEN) || null,
+  userToken: getToken(),
   tenantId: storage.getString(mmkvKeys.TENANT_ID) || null,
   selectedChatIds: new Set(),
   activeChatId: null,
@@ -424,6 +396,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   bulkSetStarred: async (chatIds: string[], isStarred: boolean) => {
     if (chatIds.length === 0) return;
     const idSet = new Set(chatIds);
+    const prior = new Map(get().chats.filter((c) => idSet.has(c.id)).map((c) => [c.id, c.isStarred] as const));
     // 1. Optimistic state update
     set((state) => ({
       chats: state.chats.map((c) => (idSet.has(c.id) ? { ...c, isStarred } : c)),
@@ -442,15 +415,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       console.error('[bulkStar] db error:', e);
     }
 
-    // 3. Parallel background API calls
-    Promise.allSettled(
-      chatIds.map((id) => API.patch(`/chats/toggle-chat-star/${id}`))
-    ).catch(() => { });
+    // 3. Make the server match (it only flips the flag, so check its answer and correct)
+    await reconcileFlag('star', chatIds, isStarred, prior);
   },
 
   bulkSetPinned: async (chatIds: string[], pinned: boolean) => {
     if (chatIds.length === 0) return;
     const idSet = new Set(chatIds);
+    const prior = new Map(get().chats.filter((c) => idSet.has(c.id)).map((c) => [c.id, c.pinned] as const));
     // 1. Optimistic state update with re-sort
     set((state) => {
       const next = state.chats.map((c) => (idSet.has(c.id) ? { ...c, pinned } : c));
@@ -474,10 +446,72 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       console.error('[bulkPin] db error:', e);
     }
 
-    // 3. Parallel background API calls
-    Promise.allSettled(
-      chatIds.map((id) => API.patch(`/chats/toggle-chat-pin/${id}`))
-    ).catch(() => { });
+    // 3. Make the server match (it only flips the flag, so check its answer and correct)
+    await reconcileFlag('pin', chatIds, pinned, prior);
+  },
+
+  patchChat: async (chatId, patch) => {
+    set((state) => {
+      const next = state.chats.map((c) => (c.id === chatId ? { ...c, ...patch } : c));
+      return { chats: 'pinned' in patch ? sortChats(next) : next };
+    });
+    try {
+      await db.update(chatsTable).set(patch).where(eq(chatsTable.id, chatId));
+    } catch (e) {
+      console.error('[chat] patchChat db error:', e);
+    }
+  },
+
+  // Open/close is a "set", not a toggle: PATCH /chats/toggle-chat-status/:id { isOpen }
+  toggleChatOpen: async (chatId, isOpen) => {
+    const chat = get().chats.find((c) => c.id === chatId);
+    if (!chat) return false;
+    const previous = chat.isOpen;
+    await get().patchChat(chatId, { isOpen });
+    try {
+      await API.patch(`/chats/toggle-chat-status/${chatId}`, {
+        isOpen,
+        ...(chat.channel === 'whatsapp' && chat.accountId ? { phone_number_id: chat.accountId } : {}),
+      });
+      return true;
+    } catch (e) {
+      console.warn('[chat] toggleChatOpen failed:', e);
+      await get().patchChat(chatId, { isOpen: previous });
+      return false;
+    }
+  },
+
+  // PATCH /contacts/block-unblock/:id takes the CHAT id
+  setChatBlocked: async (chatId, isBlock) => {
+    const chat = get().chats.find((c) => c.id === chatId);
+    if (!chat) return false;
+    const previous = chat.isBlocked;
+    await get().patchChat(chatId, { isBlocked: isBlock });
+    try {
+      await API.patch(`/contacts/block-unblock/${chatId}`, {
+        isBlock,
+        ...(chat.channel === 'whatsapp' && chat.accountId ? { phone_number_id: chat.accountId } : {}),
+      });
+      return true;
+    } catch (e) {
+      console.warn('[chat] setChatBlocked failed:', e);
+      await get().patchChat(chatId, { isBlocked: previous });
+      return false;
+    }
+  },
+
+  // POST /chats/assign: both arrays are required (empty arrays clear nothing, they just add/remove nobody)
+  assignChat: async (chatId, userIdsToAssign, userIdsToRemove, assigneeName) => {
+    const chat = get().chats.find((c) => c.id === chatId);
+    if (!chat) return false;
+    try {
+      await API.post('/chats/assign', { chatId, userIdsToAssign, userIdsToRemove });
+      await get().patchChat(chatId, { assignedToName: assigneeName });
+      return true;
+    } catch (e) {
+      console.warn('[chat] assignChat failed:', e);
+      return false;
+    }
   },
 
   fetchCurrentUser: async () => {
@@ -497,6 +531,19 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       }
     } catch (err) {
       console.warn('Failed to fetch user profile:', err);
+    }
+  },
+
+  discardFailedMessage: async (chatId: string, messageId: string) => {
+    set((state) => {
+      const msgs = state.messagesByChat[chatId];
+      if (!msgs) return state;
+      return { messagesByChat: { ...state.messagesByChat, [chatId]: msgs.filter((m) => m.id !== messageId) } };
+    });
+    try {
+      await db.delete(messagesTable).where(eq(messagesTable.id, messageId));
+    } catch (err) {
+      console.error('Failed to discard message:', err);
     }
   },
 
@@ -537,7 +584,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
     storage.set(mmkvKeys.IS_AUTHENTICATED, 'true');
     storage.set(mmkvKeys.USER_EMAIL, email);
-    storage.set(mmkvKeys.USER_TOKEN, token);
+    setToken(token);
     storage.set(mmkvKeys.TENANT_ID, actualTenantId);
 
     const actualUser = user || {};
@@ -562,55 +609,75 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   },
 
   logout: async () => {
-    const token = get().userToken || storage.getString(mmkvKeys.USER_TOKEN);
-    if (token) {
-      try {
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${token}`
-        };
-        await API.post('/auth/logout', {}, { headers });
-      } catch (err) {
-        console.warn('Logout API call failed (non-fatal):', err);
-      }
-    }
-    storage.remove(mmkvKeys.IS_AUTHENTICATED);
-    storage.remove(mmkvKeys.USER_EMAIL);
-    storage.remove(mmkvKeys.USER_TOKEN);
-    storage.remove(mmkvKeys.TENANT_ID);
-    storage.remove(mmkvKeys.USER_ID);
-    storage.remove(mmkvKeys.USER_NAME);
-    storage.remove(mmkvKeys.USER_ROLE);
-
-    // Purge local database contents on logout
+    // Parallel 401s all call logout(); only let the first one run.
+    if (isLoggingOut) return;
+    isLoggingOut = true;
+    syncRunId++; // cancel any sync still running for this session
     try {
-      const { expoDb } = require('../db/client');
-      await expoDb.execAsync('DELETE FROM chats;');
-      await expoDb.execAsync('DELETE FROM contacts;');
-      await expoDb.execAsync('DELETE FROM messages;');
-    } catch (dbErr) {
-      console.error('Failed to purge local database tables:', dbErr);
-    }
+      const token = get().userToken || getToken();
+      if (token) {
+        try {
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${token}`
+          };
+          await API.post('/auth/logout', {}, { headers });
+        } catch (err) {
+          console.warn('Logout API call failed (non-fatal):', err);
+        }
+      }
+      storage.remove(mmkvKeys.IS_AUTHENTICATED);
+      storage.remove(mmkvKeys.USER_EMAIL);
+      clearToken();
+      storage.remove(mmkvKeys.TENANT_ID);
+      storage.remove(mmkvKeys.USER_ID);
+      storage.remove(mmkvKeys.USER_NAME);
+      storage.remove(mmkvKeys.USER_ROLE);
 
-    set({
-      isAuthenticated: false,
-      userEmail: null,
-      userToken: null,
-      tenantId: null,
-      userId: null,
-      userName: null,
-      userRole: null,
-      chats: [],
-      contacts: [],
-      messagesByChat: {},
-      syncProgress: null,
-    });
+      // Drop tenant-scoped caches (filters, departments, templates, ...)
+      try {
+        for (const key of storage.getAllKeys()) {
+          if (key.startsWith('cached_') || key.startsWith('templates_')) storage.remove(key);
+        }
+      } catch (cacheErr) {
+        console.error('Failed to purge cached MMKV keys:', cacheErr);
+      }
+
+      // Purge local database contents on logout
+      try {
+        const { expoDb } = require('../db/client');
+        await expoDb.execAsync('DELETE FROM chats;');
+        await expoDb.execAsync('DELETE FROM contacts;');
+        await expoDb.execAsync('DELETE FROM messages;');
+        await expoDb.execAsync('DELETE FROM media_cache;');
+      } catch (dbErr) {
+        console.error('Failed to purge local database tables:', dbErr);
+      }
+
+      set({
+        isAuthenticated: false,
+        userEmail: null,
+        userToken: null,
+        tenantId: null,
+        userId: null,
+        userName: null,
+        userRole: null,
+        chats: [],
+        contacts: [],
+        messagesByChat: {},
+        syncProgress: null,
+        isSyncing: false,
+        isInitialSync: false,
+      });
+    } finally {
+      isLoggingOut = false;
+    }
   },
 
   // ── Local DB reads ─────────────────────────────────────────────────────────
 
   loadChats: async () => {
     try {
-      const result = await db.select().from(chatsTable).orderBy(desc(chatsTable.updatedAt)).limit(100);
+      const result = await db.select().from(chatsTable).orderBy(...CHAT_ORDER).limit(100);
       set({ chats: result as Chat[] });
     } catch (err) {
       console.error('Failed to load chats:', err);
@@ -624,21 +691,29 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
     try {
       // 1. First check if SQLite has more cached chats not yet loaded into memory
-      const currentCount = state.chats.length;
-      const localResults = await db
-        .select()
-        .from(chatsTable)
-        .orderBy(desc(chatsTable.updatedAt))
-        .limit(50)
-        .offset(currentCount);
+      // Same order as loadChats (pinned first, then newest) so offset == number already loaded.
+      // Realtime inserts can shift rows, so skip ones already in memory and keep paging.
+      const loadedIds = new Set(state.chats.map((c) => c.id));
+      let offset = state.chats.length;
+      for (;;) {
+        const localResults = await db
+          .select()
+          .from(chatsTable)
+          .orderBy(...CHAT_ORDER)
+          .limit(50)
+          .offset(offset);
 
-      if (localResults.length > 0) {
-        const localChats = localResults as Chat[];
-        set((s) => ({
-          chats: [...s.chats, ...localChats],
-          isLoadingMoreChats: false,
-        }));
-        return localChats.length;
+        if (localResults.length === 0) break;
+
+        const localChats = (localResults as Chat[]).filter((c) => !loadedIds.has(c.id));
+        if (localChats.length > 0) {
+          set((s) => ({
+            chats: [...s.chats, ...localChats.filter((c) => !s.chats.some((x) => x.id === c.id))],
+            isLoadingMoreChats: false,
+          }));
+          return localChats.length;
+        }
+        offset += localResults.length;
       }
 
       // 2. If SQLite has no more local chats, check hasMoreChats before background API sync
@@ -658,7 +733,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
       if (rawChats.length === 0 || !hasMore) {
         if (rawChats.length > 0) {
-          const mappedChats = rawChats.map(mapApiChat);
+          const mappedChats = keepReadLocally(rawChats.map(mapApiChat), get().activeChatId);
           await upsertChatBatch(mappedChats);
           set((s) => {
             const existingIds = new Set(s.chats.map((c) => c.id));
@@ -677,7 +752,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         return 0;
       }
 
-      const mappedChats = rawChats.map(mapApiChat);
+      const mappedChats = keepReadLocally(rawChats.map(mapApiChat), get().activeChatId);
       await upsertChatBatch(mappedChats);
       const nextCursor = getNextChatCursor(res.data);
 
@@ -707,6 +782,16 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     } catch (err) {
       console.error('Failed to load contacts:', err);
     }
+  },
+
+  // Warm the in-memory message list for a chat (called on touch-down on a chat row), so the chat
+  // screen already has its messages in the first frame
+  prefetchMessages: (chatId: string) => {
+    if (get().messagesByChat[chatId]?.length || prefetchingMessageIds.has(chatId)) return;
+    prefetchingMessageIds.add(chatId);
+    get()
+      .loadMessages(chatId)
+      .finally(() => prefetchingMessageIds.delete(chatId));
   },
 
   loadMessages: async (chatId: string): Promise<number> => {
@@ -800,8 +885,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   // ── Optimistic local writes ────────────────────────────────────────────────
 
-  addLocalMessage: async (chatId: string, text: string, replyTo?: ReplyToContext | null) => {
-    console.dir({ replyTo }, { depth: null })
+  addLocalMessage: async (chatId: string, text: string, replyTo?: ReplyToContext | null, opts?: { directSend?: boolean; media?: PickedMedia; special?: SpecialMessage }) => {
     const messageId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const timestamp = new Date().toISOString();
 
@@ -817,6 +901,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
     const chat = get().chats.find((c) => c.id === chatId);
 
+    // Media messages show at once with the local file, upload in the background, then send
+    const media = opts?.media;
+    const special = opts?.special;
+    const msgType = media ? media.kind : special ? special.type : 'text';
+    const previewText = media ? text || mediaPreviewLabel(media) : special ? special.label : text;
+
     const rawJsonObj = {
       _id: messageId,
       tempId: messageId,
@@ -828,7 +918,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       channel: chat?.channel || 'whatsapp',
       status: 1,
       isOptimistic: true,
-      message_type: 'text',
+      message_type: msgType,
       created_at: timestamp,
       createdAt: timestamp,
       timestamp: Date.now(),
@@ -849,8 +939,19 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         id: messageId,
         replyMsgId: effectiveReplyMsgId,
         timestamp,
-        type: 'text',
+        type: msgType,
         text,
+        ...(special ? special.message : {}),
+        ...(media
+          ? {
+              [msgType]: {
+                url: media.uri,
+                caption: text,
+                ...(media.kind === 'document' ? { filename: media.name } : {}),
+                ...(media.isVoice ? { isVoice: true, voice: true } : {}),
+              },
+            }
+          : {}),
       },
     };
 
@@ -860,12 +961,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       text,
       sender: 'You',
       isOutgoing: true,
-      type: 'text',
-      mediaUrl: null,
+      type: msgType,
+      mediaUrl: media?.uri ?? null,
       status: 'pending',
       timestamp,
       readReceipt: null,
-      isImage: false,
+      isImage: msgType === 'image',
       rawJson: JSON.stringify(rawJsonObj),
     };
 
@@ -876,7 +977,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
       for (const c of state.chats) {
         if (c.id === chatId) {
-          updatedChat = { ...c, lastMessage: text, updatedAt: timestamp };
+          updatedChat = { ...c, lastMessage: previewText, updatedAt: timestamp };
         } else {
           otherChats.push(c);
         }
@@ -905,12 +1006,32 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
     try {
       await db.insert(messagesTable).values(newMessage);
-      await db.update(chatsTable).set({ lastMessage: text, updatedAt: timestamp }).where(eq(chatsTable.id, chatId));
+      await db.update(chatsTable).set({ lastMessage: previewText, updatedAt: timestamp }).where(eq(chatsTable.id, chatId));
     } catch (err) {
       console.error('Failed to persist message locally:', err);
       get().loadChats();
       get().loadMessages(chatId);
       return;
+    }
+
+    // Upload the file first (WhatsApp/Messenger/Instagram all send by asset id)
+    let assetId = '';
+    if (media) {
+      try {
+        assetId = await uploadMediaToMeta(media, { channel: chat?.channel ?? null, accountId: chat?.accountId ?? null });
+        // The confirmed message shows the local file instead of downloading what we just uploaded
+        require('../hooks/useMessageMedia').seedLocalMedia(assetId, chatId, chat?.accountId, media.uri);
+      } catch (e: any) {
+        console.warn('[media] upload failed:', e);
+        await get().updateMessageStatus(chatId, messageId, 'failed');
+        Alert.alert(
+          'Upload failed',
+          e?.response?.status === 403
+            ? "You don't have permission to upload files."
+            : e?.response?.data?.message || e?.message || 'The file could not be uploaded.'
+        );
+        return;
+      }
     }
 
     // Emit standard Socket.io event for message sending
@@ -936,7 +1057,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       }
 
       const payload = {
-        type: 'text',
+        type: msgType,
+        ...(media ? { assetId, uploadAssetId: assetId, text } : {}),
         to: recipientPhone,
         display_phone_number: recipientPhone,
         phone_number: recipientPhone,
@@ -954,12 +1076,28 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         },
         tempId: messageId,
         replyMsgId: effectiveReplyMsgId,
+        // Direct Send: a utility-category text, allowed outside the 24-hour window
+        ...(opts?.directSend ? { isDirectSend: true, directSend: true, category: 'utility' } : {}),
         ...(effectiveReplyTo ? { reply_to: effectiveReplyTo } : {}),
         message: {
           replyMsgId: effectiveReplyMsgId,
-          text: {
-            body: text,
-          },
+          ...(special ? special.message : {}),
+          ...(media
+            ? {
+                text,
+                [msgType]: {
+                  id: assetId,
+                  uploaded_id: assetId,
+                  uploadAssetId: assetId,
+                  attachment_id: assetId,
+                  ...(media.kind === 'document' ? { filename: media.name } : {}),
+                  caption: text,
+                  ...(media.isVoice ? { isVoice: true, voice: true } : {}),
+                },
+              }
+            : special
+              ? {}
+              : { text: { body: text } }),
         },
       };
 
@@ -1065,7 +1203,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       },
     });
 
-    let cancelled = false;
+    // logout() bumps syncRunId, which makes this run stop at its next checkpoint
+    const runId = ++syncRunId;
+    const cancelled = () => runId !== syncRunId;
 
     try {
       try {
@@ -1080,7 +1220,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       let cursor: string | null = null;
 
       for (let page = 0; page < MAX_CHAT_PAGES; page++) {
-        if (cancelled) return;
+        if (cancelled()) return;
 
         const params: Record<string, any> = { limit: CHAT_PAGE_SIZE };
         if (cursor) params.after = cursor;
@@ -1102,7 +1242,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
         const pageChatsMapped: Chat[] = [];
         for (const raw of pageChats) {
-          const chat = mapApiChat(raw);
+          const chat = keepReadLocally([mapApiChat(raw)], get().activeChatId)[0];
           if (!seenIds.has(chat.id)) {
             seenIds.add(chat.id);
             allChats.push(chat);
@@ -1171,7 +1311,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const messageChats = allChats.slice(0, MAX_MESSAGE_CHATS);
 
       for (let i = 0; i < messageChats.length; i++) {
-        if (cancelled) return;
+        if (cancelled()) return;
 
         const chat = messageChats[i];
         set({
@@ -1217,7 +1357,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       });
       await get().fetchAndCacheFilterOptions();
 
-      if (!cancelled) {
+      if (!cancelled()) {
         const now = new Date().toISOString();
         storage.set(mmkvKeys.LAST_SYNCED_AT, now);
         set({
@@ -1246,9 +1386,97 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       }
     } catch (err) {
       console.error('[sync] syncWithBackend error:', err);
-      if (!cancelled) {
+      if (!cancelled()) {
         set({ isSyncing: false, isInitialSync: false, syncProgress: null });
       }
+    }
+  },
+
+  // ── Incremental refresh: catch up on anything missed while offline/backgrounded ──
+
+  refreshRecent: async (opts) => {
+    const { isAuthenticated, userToken, isSyncing, isInitialSync } = get();
+    if (!isAuthenticated || !userToken || isSyncing || isInitialSync || isRefreshing) return;
+    if (!opts?.force && Date.now() - lastRefreshAt < REFRESH_MIN_INTERVAL_MS) return;
+    isRefreshing = true;
+    lastRefreshAt = Date.now();
+
+    try {
+      // Retry "mark as read" calls that failed earlier, before asking the server for its counts
+      for (const id of [...pendingReadIds]) {
+        const pending = get().chats.find((c) => c.id === id);
+        if (pending) await markChatReadOnServer(pending);
+        else pendingReadIds.delete(id);
+      }
+
+      const res = await API.get('/chats/v2/all', { params: { limit: CHAT_PAGE_SIZE } });
+      const serverChats = keepReadLocally(extractChats(res.data).map(mapApiChat), get().activeChatId);
+      if (serverChats.length === 0) return;
+
+      const localRows = await db.select({ id: chatsTable.id, updatedAt: chatsTable.updatedAt }).from(chatsTable);
+      const localUpdated = new Map(localRows.map((r) => [r.id, r.updatedAt]));
+      const changed = serverChats.filter((c) => {
+        const local = localUpdated.get(c.id);
+        return !local || new Date(c.updatedAt).getTime() > new Date(local).getTime();
+      });
+
+      await upsertChatBatch(serverChats);
+
+      for (const chat of changed.slice(0, REFRESH_MAX_CHATS)) {
+        try {
+          // Newest message we already hold that came from the server (skip optimistic temp_ rows)
+          const [newest] = await db
+            .select({ id: messagesTable.id, timestamp: messagesTable.timestamp })
+            .from(messagesTable)
+            .where(and(eq(messagesTable.chatId, chat.id), notLike(messagesTable.id, 'temp_%')))
+            .orderBy(desc(messagesTable.timestamp))
+            .limit(1);
+
+          const fetched: Message[] = [];
+          if (!newest) {
+            // Nothing local yet: same bootstrap as the initial sync
+            const r = await API.get(`/messages/${chat.id}/sync`, { params: { direction: 'older', limit: 50 } });
+            fetched.push(...extractMessages(r.data).map((m) => mapApiMessage(m, chat.id)));
+          } else {
+            let cursorId = newest.id;
+            let cursorCreatedAt = newest.timestamp;
+            for (let page = 0; page < REFRESH_MAX_PAGES; page++) {
+              const r = await API.get(`/messages/${chat.id}/sync`, {
+                params: { direction: 'newer', limit: 50, cursorId, cursorCreatedAt },
+              });
+              const batch = extractMessages(r.data).map((m) => mapApiMessage(m, chat.id));
+              fetched.push(...batch);
+              const end = r.data?.pageInfo?.endCursor;
+              if (!r.data?.pageInfo?.hasMore || !end?.id) break;
+              cursorId = String(end.id);
+              cursorCreatedAt = String(end.createdAt);
+            }
+          }
+
+          if (fetched.length === 0) continue;
+          await upsertMessageBatch(fetched);
+
+          // Merge into memory only for chats already loaded (keeps older pages the user scrolled)
+          set((state) => {
+            const current = state.messagesByChat[chat.id];
+            if (!current) return state;
+            const byId = new Map(current.map((m) => [m.id, m]));
+            for (const m of fetched) byId.set(m.id, m);
+            const merged = [...byId.values()].sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+            return { messagesByChat: { ...state.messagesByChat, [chat.id]: merged } };
+          });
+        } catch (e) {
+          console.warn(`[refresh] messages for ${chat.id} failed (non-fatal):`, e);
+        }
+      }
+
+      await get().loadChats();
+    } catch (err) {
+      console.warn('[refresh] refreshRecent failed:', err);
+    } finally {
+      isRefreshing = false;
     }
   },
 
@@ -1279,6 +1507,13 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       await upsertMessage(msg);
 
       const isActiveChat = get().activeChatId === chatId;
+
+      // A message arriving in the chat being looked at is read on arrival: tell the server so its
+      // unread count does not creep up behind our back
+      if (isActiveChat && !msg.isOutgoing) {
+        const openChat = get().chats.find((c) => c.id === chatId);
+        markChatReadOnServer(openChat ?? { id: chatId, channel: incoming.channel ?? null, accountId: null });
+      }
 
       // 2. Play notification sound on incoming messages when not active in this chat
       if (!msg.isOutgoing && !isActiveChat) {
@@ -1334,7 +1569,21 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           campaignId: null,
           updatedAt: msg.timestamp,
           isCampaignChat: false,
+          lastMsgReceivedAt: null,
+          isGroup: false,
+          waGroupId: null,
+          replyTimeoutStatus: null,
+          slaType: null,
           rawJson: null,
+        };
+      }
+
+      // A customer message reopens the WhatsApp 24-hour window straight away (the server's
+      // `lastMessageTime` event confirms it later)
+      if (!msg.isOutgoing) {
+        targetChat = {
+          ...targetChat,
+          lastMsgReceivedAt: String(Math.floor(new Date(msg.timestamp).getTime() / 1000)),
         };
       }
 
@@ -1406,8 +1655,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   resetUnreadCount: async (chatId: string) => {
     try {
       const chat = get().chats.find((c) => c.id === chatId);
+      if (!chat) return;
+
+      // Tell the server as well, otherwise its count survives and returns on the next refresh/sync
+      if (chat.unreadCount > 0 || pendingReadIds.has(chatId)) {
+        markChatReadOnServer(chat);
+      }
+
       // Skip redundant DB writes and state updates if unreadCount is already 0
-      if (!chat || chat.unreadCount === 0) return;
+      if (chat.unreadCount === 0) return;
 
       await db.update(chatsTable)
         .set({ unreadCount: 0 })
