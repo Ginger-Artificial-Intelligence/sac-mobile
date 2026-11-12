@@ -4,6 +4,7 @@ let storageInstance: {
   remove: (key: string) => void;
   delete: (key: string) => void;
   clearAll: () => void;
+  getAllKeys: () => string[];
 };
 
 try {
@@ -18,9 +19,15 @@ try {
     remove: (key: string) => mmkv.remove(key),
     delete: (key: string) => mmkv.remove(key),
     clearAll: () => mmkv.clearAll(),
+    getAllKeys: () => mmkv.getAllKeys(),
   };
 } catch (e) {
-  console.warn("MMKV failed to initialize (native TurboModule missing). Falling back to memory storage.");
+  // In a real build this means a broken native setup: crash at startup rather than silently losing
+  // the session (and all cached data) on every restart. Only dev keeps the in-memory fallback.
+  if (!__DEV__) {
+    throw new Error(`MMKV failed to initialize: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  console.error('MMKV failed to initialize (native module missing). DEV ONLY: using non-persistent memory storage.', e);
   const mockStorage: Record<string, string> = {};
   storageInstance = {
     getString: (key: string) => mockStorage[key] || null,
@@ -30,6 +37,7 @@ try {
     clearAll: () => {
       Object.keys(mockStorage).forEach(key => delete mockStorage[key]);
     },
+    getAllKeys: () => Object.keys(mockStorage),
   };
 }
 

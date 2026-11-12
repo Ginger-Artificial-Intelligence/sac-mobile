@@ -15,6 +15,8 @@ import ContactsScreen from "../screens/contacts";
 import InboxScreen from "../screens/inbox";
 import ProfileScreen from "../screens/profile";
 import { useSyncStore } from "../store/syncStore";
+import { useAfterTransition } from "../hooks/useAfterTransition";
+import { useNewContactSheet } from "../store/newContactStore";
 
 import { useSharedValue } from "react-native-reanimated";
 
@@ -36,15 +38,18 @@ export default function MainAppContainer() {
 
   const pagePosition = useSharedValue(0);
 
-  // Sync incoming URL param to PagerView
+  // The URL `tab` param is only a one-shot request to switch tabs (deep link, or another screen such
+  // as the inbox FAB asking for Contacts). Swiping/tapping tabs must not touch it: every setParams
+  // updates the navigation state and re-renders this screen. Clear it once handled so the same
+  // request works again later.
   useEffect(() => {
     if (tab && typeof tab === 'string') {
       const idx = TABS.indexOf(tab);
       if (idx !== -1 && idx !== selectedIndex) {
         setSelectedIndex(idx);
-        pagePosition.value = idx;
         pagerRef.current?.setPage(idx);
       }
+      router.setParams({ tab: undefined });
     }
   }, [tab]);
 
@@ -52,18 +57,21 @@ export default function MainAppContainer() {
     const position = e.nativeEvent.position;
     if (position !== selectedIndex) {
       setSelectedIndex(position);
-      pagePosition.value = position;
-      router.setParams({ tab: TABS[position] });
     }
   };
 
+  // pagePosition is driven by the pager's own scroll events (onPageScroll), so the pill follows the
+  // real page motion. Setting it here as well made it jump to the target, then snap back and re-slide.
   const handleTabSelect = (index: number) => {
     setSelectedIndex(index);
-    pagePosition.value = index;
     pagerRef.current?.setPage(index);
-    router.setParams({ tab: TABS[index] });
   };
 
+  // Mount the three off-screen tabs after the screen has finished appearing, so the inbox gets
+  // the whole first frame instead of competing with Contacts/Dashboard/Profile.
+  const otherTabsReady = useAfterTransition();
+
+  const userName = useSyncStore((state) => state.userName);
   const selectedIds = useSyncStore((state) => state.selectedChatIds);
   const clearSelection = useSyncStore((state) => state.clearSelection);
   const bulkSetStarred = useSyncStore((state) => state.bulkSetStarred);
@@ -82,7 +90,11 @@ export default function MainAppContainer() {
             rightAction: (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20, marginRight: 8 }}>
                 <Pressable
-                  onPress={() => bulkSetStarred(Array.from(selectedIds), true)}
+                  onPress={() => {
+                    const ids = Array.from(selectedIds);
+                    const chats = useSyncStore.getState().chats;
+                    bulkSetStarred(ids, !ids.every((id) => chats.find((c) => c.id === id)?.isStarred));
+                  }}
                   onPressIn={() => setIsStarPressed(true)}
                   onPressOut={() => setIsStarPressed(false)}
                   style={{
@@ -97,7 +109,11 @@ export default function MainAppContainer() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => bulkSetPinned(Array.from(selectedIds), true)}
+                  onPress={() => {
+                    const ids = Array.from(selectedIds);
+                    const chats = useSyncStore.getState().chats;
+                    bulkSetPinned(ids, !ids.every((id) => chats.find((c) => c.id === id)?.pinned));
+                  }}
                   onPressIn={() => setIsPinPressed(true)}
                   onPressOut={() => setIsPinPressed(false)}
                   style={{
@@ -136,7 +152,7 @@ export default function MainAppContainer() {
           };
         }
         return {
-          title: "SAC CRM",
+          title: userName || "SAC CRM",
           hideMenu: true,
           largeTitle: true,
           rightAction: (
@@ -177,8 +193,8 @@ export default function MainAppContainer() {
                     }
                   }
                 },
-                { label: "New chat", onClick: () => router.setParams({ tab: 'contacts' }) },
-                { label: "Add contact", onClick: () => router.setParams({ tab: 'contacts' }) },
+                { label: "New chat", icon: "chat", onClick: () => useNewContactSheet.getState().open('chat') },
+                { label: "Add contact", icon: "person-add", onClick: () => useNewContactSheet.getState().open('contact') },
               ]}
             />
           )
@@ -208,9 +224,9 @@ export default function MainAppContainer() {
         }}
       >
         <View key="0" className="flex-1"><InboxScreen /></View>
-        <View key="1" className="flex-1"><ContactsScreen /></View>
-        <View key="2" className="flex-1"><DashboardScreen /></View>
-        <View key="3" className="flex-1"><ProfileScreen /></View>
+        <View key="1" className="flex-1">{otherTabsReady ? <ContactsScreen /> : null}</View>
+        <View key="2" className="flex-1">{otherTabsReady ? <DashboardScreen /> : null}</View>
+        <View key="3" className="flex-1">{otherTabsReady ? <ProfileScreen /> : null}</View>
       </PagerView>
       <BottomTabBar selectedIndex={selectedIndex} onSelect={handleTabSelect} pagePosition={pagePosition} />
     </View>

@@ -29,6 +29,17 @@ const getMediaCacheKey = (mediaId: string, phoneId: string) => {
   return [mediaId, phoneId || ""].join(":");
 };
 
+/**
+ * Remember the local file of a message we just sent, under its uploaded asset id, so the confirmed
+ * (server) message shows it straight away instead of downloading it again. Memory only: a file
+ * path must not outlive the cache folder it lives in.
+ */
+export function seedLocalMedia(assetId: string, chatId: string, accountId: string | null | undefined, uri: string) {
+  if (!assetId || !uri) return;
+  const phoneId = getMediaParams({ mediaId: assetId }, chatId, accountId || undefined).phone_number_id || "";
+  mediaUrlCache.set(getMediaCacheKey(assetId, phoneId), uri);
+}
+
 export function useMessageMedia(options: UseMessageMediaOptions): UseMessageMediaResult {
   const {
     mediaId = "",

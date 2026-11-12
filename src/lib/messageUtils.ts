@@ -11,6 +11,7 @@ export type RenderMessageType =
   | 'contacts'
   | 'location'
   | 'sticker'
+  | 'feedback'
   | 'unsupported'
 
 export type NormalizedChatMessage = Record<string, any> & {
@@ -45,6 +46,7 @@ const TYPE_ALIASES: Record<string, RenderMessageType> = {
   contacts: 'contacts', contact: 'contacts', contact_message: 'contacts', contacts_message: 'contacts',
   location: 'location', location_message: 'location', locationmessage: 'location',
   sticker: 'sticker', sticker_message: 'sticker', stickermessage: 'sticker',
+  feedback: 'feedback', customer_feedback: 'feedback',
   unsupported: 'unsupported', unknown: 'unsupported',
 }
 
@@ -116,11 +118,19 @@ export const getMessageText = (msg: any): string => {
   )
 }
 
+const hasFeedbackPayload = (msg: any, message: any): boolean => {
+  const fb = getObjectPayload(message?.feedback ?? msg?.feedback ?? message?.messaging_feedback ?? msg?.messaging_feedback)
+  if (Object.keys(fb).length) return true
+  const nfm = message?.interactive?.nfm_reply || message?.nfm_reply || msg?.interactive?.nfm_reply
+  return String(nfm?.name || '').toLowerCase() === 'feedback'
+}
+
 export const normalizeMessageType = (msg: any): RenderMessageType => {
   const message = getMessagePayload(msg)
   const content = getContentPayload(msg)
   const messageInput = getMessageInputPayload(msg)
   const rawType = firstString(msg?.type, msg?.messageType, msg?.message_type, msg?.msgType, message?.type, content?.type, messageInput?.type).toLowerCase().replace(/\s+/g, '_')
+  if (hasFeedbackPayload(msg, message)) return 'feedback'
   const direct = TYPE_ALIASES[rawType]
   if (direct) return direct
   if (message?.template || msg?.template || content?.template || messageInput?.template) return 'template'

@@ -18,13 +18,14 @@ interface SwipeToReplyWrapperProps {
   onSwipeReply: () => void;
   isOutgoing?: boolean;
   disabled?: boolean;
+  onLongPress?: () => void;
 }
 
 const TRIGGER_THRESHOLD = 45;
 const MAX_TRANSLATION = 75;
 
 export const SwipeToReplyWrapper: React.FC<SwipeToReplyWrapperProps> = React.memo(
-  ({ children, onSwipeReply, isOutgoing = false, disabled = false }) => {
+  ({ children, onSwipeReply, isOutgoing = false, disabled = false, onLongPress }) => {
     const isDark = useThemeStore((state) => state.isDark);
     const colors = useThemeStore((state) => state.colors);
 
@@ -75,6 +76,18 @@ export const SwipeToReplyWrapper: React.FC<SwipeToReplyWrapperProps> = React.mem
           mass: 0.8,
         });
       });
+
+    // Long press opens the message menu; moving the finger (a swipe or a scroll) cancels it
+    const longPress = Gesture.LongPress()
+      .enabled(!!onLongPress)
+      .minDuration(350)
+      .maxDistance(12)
+      .runOnJS(true)
+      .onStart(() => {
+        triggerHaptic();
+        onLongPress?.();
+      });
+    const gesture = Gesture.Simultaneous(panGesture, longPress);
 
     const animatedBubbleStyle = useAnimatedStyle(() => ({
       transform: [{ translateX: translateX.value }],
@@ -131,7 +144,7 @@ export const SwipeToReplyWrapper: React.FC<SwipeToReplyWrapperProps> = React.mem
         </Animated.View>
 
         {/* Swiping Bubble */}
-        <GestureDetector gesture={panGesture}>
+        <GestureDetector gesture={gesture}>
           <Animated.View style={[styles.bubbleWrapper, animatedBubbleStyle]}>
             {children}
           </Animated.View>

@@ -1,5 +1,7 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
+// NOTE: tables are created by the raw SQL in initializeDatabase() (db/client.ts), not by drizzle
+// migrations. When you change a column here, change it there too (including its ALTER TABLE list).
 export const chats = sqliteTable('chats', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -22,6 +24,13 @@ export const chats = sqliteTable('chats', {
   username: text('username'),
   isBlocked: integer('is_blocked', { mode: 'boolean' }).default(false).notNull(),
   isCampaignChat: integer('is_campaign_chat', { mode: 'boolean' }).default(false).notNull(),
+  // unix seconds as a string, last time the customer wrote (drives the WhatsApp 24-hour window)
+  lastMsgReceivedAt: text('last_msg_received_at'),
+  isGroup: integer('is_group', { mode: 'boolean' }).default(false).notNull(),
+  waGroupId: text('wa_group_id'),
+  // SLA / escalation: 'pending' | 'escalated' | null, and the SLA kind (e.g. 'FRT')
+  replyTimeoutStatus: text('reply_timeout_status'),
+  slaType: text('sla_type'),
   rawJson: text('raw_json'),
 });
 
@@ -38,6 +47,12 @@ export const messages = sqliteTable('messages', {
   readReceipt: text('read_receipt'),
   isImage: integer('is_image', { mode: 'boolean' }).default(false).notNull(),
   rawJson: text('raw_json'),
+});
+
+export const mediaCache = sqliteTable('media_cache', {
+  key: text('key').primaryKey(),
+  dataUrl: text('data_url').notNull(),
+  createdAt: integer('created_at').notNull(),
 });
 
 export const contacts = sqliteTable('contacts', {

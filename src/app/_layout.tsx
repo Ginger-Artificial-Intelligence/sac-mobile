@@ -22,6 +22,7 @@ import { useThemeStore } from "../store/themeStore";
 import { useColorScheme } from "nativewind";
 import { LoadingSpinner } from "../components/ui/Loading";
 import SocketManager from "../components/common/SocketManager";
+import { NewContactModal } from "../components/contacts/NewContactModal";
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -101,6 +102,7 @@ export default function RootLayout() {
         <StatusBar style={isDark ? "light" : "dark"} />
         <QueryClientProvider client={queryClient}>
           <SocketManager />
+          <NewContactModal />
           <Stack
             screenOptions={{
               headerShown: false,
