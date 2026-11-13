@@ -1,5 +1,5 @@
 import {
-  ScrollView, View, TextInput, Pressable,
+  ScrollView, View, TextInput, Pressable, Platform,
   Alert,
 } from "react-native";
 import { Text } from "../components/ui/Text";
@@ -18,98 +18,28 @@ import { storage } from "../store/mmkv";
 import { useThemeStore } from "../store/themeStore";
 import { HapticPressable } from "@/components/ui/HapticPressable";
 import { Image } from "expo-image";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useShellNav } from "../store/shellNavStore";
 
 // ─── Tab filter mapping (matches ChatFilterTab from v1) ───────────────────────
 type FilterTab = "All" | "Unread" | "Open" | "Closed" | "Starred" | "Referral" | "Assigned";
 
 const TAB_FILTERS: FilterTab[] = ["All", "Unread", "Open", "Closed", "Starred", "Referral", "Assigned"];
 
-// ─── Selected action bar when multi-select is active ─────────────────────────
-function SelectionBar({
-  count,
-  onStar,
-  onPin,
-  onMute,
-  onClear,
-}: {
-  count: number;
-  onStar: () => void;
-  onPin: () => void;
-  onMute: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#00326b',
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      gap: 4,
-    }}>
-      <Pressable onPress={onClear} style={{ padding: 8 }}>
-        <Icon name="close" size={22} color="#ffffff" />
-      </Pressable>
-      <Text style={{ flex: 1, color: '#ffffff', fontWeight: '600', fontSize: 16 }}>
-        {count} selected
-      </Text>
-      <Pressable onPress={onStar} style={{ padding: 8 }}>
-        <Icon name="star-outline" size={22} color="#ffffff" />
-      </Pressable>
-      <Pressable onPress={onPin} style={{ padding: 8 }}>
-        <Icon name="push-pin" size={22} color="#ffffff" />
-      </Pressable>
-      <Pressable onPress={onMute} style={{ padding: 8 }}>
-        <Icon name="notifications-off" size={22} color="#ffffff" />
-      </Pressable>
-    </View>
-  );
-}
-
 // Lead statuses are configured per workspace, so colour by meaning: lost/fake red, won green, rest blue
-function leadChipColors(status: string, isDark: boolean) {
+function leadChipColors(status: string, colors: ReturnType<typeof useThemeStore.getState>["colors"]) {
   const s = status.toLowerCase();
-  if (/lost|fake/.test(s)) return { bg: "rgba(244, 67, 54, 0.12)", text: "#f44336", border: "rgba(244, 67, 54, 0.35)" };
-  if (/won/.test(s)) return { bg: "rgba(34, 197, 94, 0.14)", text: isDark ? "#4ade80" : "#15803d", border: "rgba(34, 197, 94, 0.4)" };
-  return { bg: "rgba(59, 130, 246, 0.12)", text: isDark ? "#93c5fd" : "#1d4ed8", border: "rgba(59, 130, 246, 0.35)" };
+  if (/lost|fake/.test(s)) return { bg: colors.errorContainer, text: colors.error };
+  if (/won/.test(s)) return { bg: colors.secondaryContainer, text: colors.secondary };
+  return { bg: colors.primaryTint, text: colors.primary };
 }
 
-// ─── Chat Avatar (image or initials) ─────────────────────────────────────────
-const ChatAvatar = memo(({ avatar, name, size, isDark, primaryColor }: {
-  avatar: string | null;
-  name: string;
-  size: number;
-  isDark: boolean;
-  primaryColor: string;
-}) => {
-  const [imgError, setImgError] = useState(false);
-  const isUrl = !imgError && avatar
-    ? (avatar.startsWith('http://') || avatar.startsWith('https://'))
-    : false;
-  const initial = (avatar && avatar.length <= 2) ? avatar : (name?.charAt(0)?.toUpperCase() ?? '?');
-
-  return (
-    <View style={{
-      width: size, height: size, borderRadius: size / 2, marginRight: 12,
-      backgroundColor: isDark ? '#1e3048' : '#dde3f9',
-      alignItems: 'center', justifyContent: 'center',
-      overflow: 'hidden',
-    }}>
-      {isUrl ? (
-        <Image
-          source={{ uri: avatar! }}
-          style={{ width: size, height: size }}
-          onError={() => setImgError(true)}
-        />
-      ) : (
-        <Text style={{ fontSize: size * 0.375, fontWeight: '700', color: primaryColor }}>
-          {initial}
-        </Text>
-      )}
-    </View>
-  );
-});
-
+// Brand colours of each channel's own mark, shown small on the avatar so a mixed inbox scans by channel
+const CHANNEL_MARK: Record<string, { icon: "whatsapp" | "facebook-messenger" | "instagram"; color: string }> = {
+  whatsapp: { icon: "whatsapp", color: "#25d366" },
+  messenger: { icon: "facebook-messenger", color: "#0084ff" },
+  instagram: { icon: "instagram", color: "#e1306c" },
+};
 
 // ─── Individual chat row (selection & actions) ─────────────────────────
 const ChatRow = memo(
@@ -155,6 +85,9 @@ const ChatRow = memo(
           color: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 50, 107, 0.08)",
           foreground: true,
         }}
+        // A plain style object: with NativeWind a style function here drops the row layout.
+        // iPhone has no ripple, so it gets an opacity press state from the class instead.
+        className={Platform.OS === "ios" ? "active:opacity-60" : undefined}
         style={{
           width: "100%",
           minHeight: 72,
@@ -162,14 +95,9 @@ const ChatRow = memo(
           flexDirection: "row",
           alignItems: "center",
 
-          paddingHorizontal: 16,
-          paddingVertical: 10,
+          paddingLeft: 16,
 
-          backgroundColor: selected
-            ? isDark
-              ? "#1a293d"
-              : "#e8eeff"
-            : colors.surfaceContainerLowest,
+          backgroundColor: selected ? colors.primaryTint : colors.surface,
         }}
       >
         {/* Selection */}
@@ -214,9 +142,7 @@ const ChatRow = memo(
 
             marginRight: 12,
 
-            backgroundColor: isDark
-              ? "#1e3048"
-              : "#dde3f9",
+            backgroundColor: colors.primaryTint,
 
             alignItems: "center",
             justifyContent: "center",
@@ -239,7 +165,7 @@ const ChatRow = memo(
             />
           ) : (
             chat.isGroup ? (
-              <Icon name="groups" size={28} color="#25D366" />
+              <Icon name="groups" size={26} color={colors.primary} />
             ) : (
               <Text
                 style={{
@@ -254,7 +180,42 @@ const ChatRow = memo(
           )}
         </View>
 
-        {/* Main content */}
+        {/* Channel mark on the avatar's corner (WhatsApp / Messenger / Instagram) */}
+        {CHANNEL_MARK[chat.channel ?? ""] && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: (selecting ? 48 : 16) + 34,
+              top: 46,
+              width: 22,
+              height: 22,
+              borderRadius: 11,
+              backgroundColor: CHANNEL_MARK[chat.channel!].color,
+              borderWidth: 2,
+              borderColor: selected ? colors.primaryTint : colors.surface,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <MaterialCommunityIcons name={CHANNEL_MARK[chat.channel!].icon} size={12} color="#ffffff" />
+          </View>
+        )}
+
+        {/* Main content + trailing badges share the hairline that starts after the avatar */}
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 72,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingRight: 16,
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.divider,
+          }}
+        >
         <View
           style={{
             flex: 1,
@@ -278,10 +239,11 @@ const ChatRow = memo(
                 flex: 1,
                 minWidth: 0,
 
-                fontSize: 15,
+                fontSize: 16.5,
+                lineHeight: 22,
                 fontWeight: hasUnread
                   ? "700"
-                  : "600",
+                  : "500",
 
                 color: colors.onSurface,
               }}
@@ -293,9 +255,9 @@ const ChatRow = memo(
               style={{
                 marginLeft: 8,
 
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: hasUnread
-                  ? "600"
+                  ? "700"
                   : "400",
 
                 color: hasUnread
@@ -309,12 +271,13 @@ const ChatRow = memo(
             </Text>
           </View>
 
-          {/* Last message */}
-          <Text
+          {/* Last message (the line is left out when there is none, so the row stays compact) */}
+          {(chat.isGroup || !!chat.lastMessage) && <Text
             numberOfLines={1}
             ellipsizeMode="tail"
             style={{
-              fontSize: 13,
+              fontSize: 14,
+              lineHeight: 20,
 
               color: hasUnread
                 ? colors.onSurface
@@ -326,39 +289,42 @@ const ChatRow = memo(
             }}
           >
             {chat.isGroup ? "Group · " : ""}
-            {chat.lastMessage || " "}
-          </Text>
+            {chat.lastMessage || ""}
+          </Text>}
 
-          {/* Status chips: lead status, quick-assist keyword, open/closed, SLA / escalation */}
-          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+          {/* Status line: lead stage, keyword, open/closed, SLA. Quiet text; only real alerts get a filled pill */}
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
             {!!chat.leadStage && (() => {
-              const lead = leadChipColors(chat.leadStage!, isDark);
+              const lead = leadChipColors(chat.leadStage!, colors);
               return (
-                <View style={{ backgroundColor: lead.bg, borderColor: lead.border, borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: 9, fontWeight: "800", color: lead.text, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                <View style={{ backgroundColor: lead.bg, borderRadius: 9, paddingHorizontal: 7, height: 18, justifyContent: "center" }}>
+                  <Text numberOfLines={1} style={{ fontSize: 11, lineHeight: 14, fontWeight: "700", color: lead.text, maxWidth: 110 }}>
                     {chat.leadStage}
                   </Text>
                 </View>
               );
             })()}
+            <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: chat.isOpen ? "500" : "400", color: chat.isOpen ? colors.onSurfaceVariant : colors.outline }}>
+              {chat.isOpen ? "Open" : "Closed"}
+            </Text>
+            {!!chat.assignedToName && (
+              <Text numberOfLines={1} style={{ fontSize: 12, lineHeight: 16, color: colors.outline, maxWidth: 110 }}>
+                {chat.assignedToName}
+              </Text>
+            )}
             {!!chat.quickAssistKeyword && (
-              <Text numberOfLines={1} style={{ fontSize: 11, color: colors.outline, maxWidth: 110 }}>
+              <Text numberOfLines={1} style={{ fontSize: 12, lineHeight: 16, color: colors.outline, maxWidth: 100 }}>
                 {chat.quickAssistKeyword}
               </Text>
             )}
-            <Text style={{ fontSize: 11, fontWeight: "500", color: chat.isOpen ? "#16a34a" : "#d97706" }}>
-              {chat.isOpen ? "Open" : "Closed"}
-            </Text>
             {chat.replyTimeoutStatus === "escalated" ? (
-              <View style={{ backgroundColor: "rgba(244, 67, 54, 0.12)", borderColor: "rgba(244, 67, 54, 0.4)", borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                <Text style={{ fontSize: 9, fontWeight: "800", color: "#f44336", textTransform: "uppercase" }}>Escalated</Text>
+              <View style={{ backgroundColor: colors.errorContainer, borderRadius: 9, paddingHorizontal: 7, height: 18, justifyContent: "center" }}>
+                <Text style={{ fontSize: 11, lineHeight: 14, fontWeight: "700", color: colors.error }}>Escalated</Text>
               </View>
             ) : chat.replyTimeoutStatus === "pending" ? (
-              <View style={{ backgroundColor: "rgba(255, 152, 0, 0.12)", borderColor: "rgba(255, 152, 0, 0.3)", borderWidth: 1, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                <Text style={{ fontSize: 9, fontWeight: "700", color: "#ff9800", textTransform: "uppercase" }}>
-                  SLA: {chat.slaType || "FRT"}
-                </Text>
-              </View>
+              <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: "600", color: colors.warning }}>
+                SLA {chat.slaType || "FRT"}
+              </Text>
             ) : null}
           </View>
         </View>
@@ -380,21 +346,21 @@ const ChatRow = memo(
           {/* Star and pin show alongside the unread badge, not instead of it */}
           {(chat.isStarred || chat.pinned) && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              {chat.isStarred && <Icon name="star" size={16} color="#FFC107" />}
+              {chat.isStarred && <Icon name="star" size={16} color={colors.star} />}
               {chat.pinned && <Icon name="push-pin" size={16} color={colors.outline} />}
             </View>
           )}
           {hasUnread ? (
             <View
               style={{
-                minWidth: 20,
-                height: 20,
+                minWidth: 22,
+                height: 22,
 
-                paddingHorizontal: 5,
+                paddingHorizontal: 6,
 
-                borderRadius: 10,
+                borderRadius: 11,
 
-                backgroundColor: colors.secondary,
+                backgroundColor: colors.unread,
 
                 alignItems: "center",
                 justifyContent: "center",
@@ -402,8 +368,9 @@ const ChatRow = memo(
             >
               <Text
                 style={{
-                  color: colors.onPrimary,
-                  fontSize: 10,
+                  color: colors.onUnread,
+                  fontSize: 12,
+                  lineHeight: 16,
                   fontWeight: "700",
                 }}
               >
@@ -413,6 +380,7 @@ const ChatRow = memo(
               </Text>
             </View>
           ) : null}
+        </View>
         </View>
       </Pressable>
     );
@@ -457,6 +425,11 @@ export default function InboxScreen() {
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activeFilter, setActiveFilter] = useState<FilterTab>("All");
+  const inboxNonce = useShellNav((s) => s.inboxNonce);
+  useEffect(() => {
+    const f = useShellNav.getState().inboxFilter as FilterTab | null;
+    if (inboxNonce > 0 && f && TAB_FILTERS.includes(f)) setActiveFilter(f);
+  }, [inboxNonce]);
   const [searchText, setSearchText] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const selecting = selectedIds.size > 0;
@@ -569,6 +542,8 @@ export default function InboxScreen() {
       onSelect: setSelectedAccount,
     },
   ];
+
+  const [showFilters, setShowFilters] = useState(false);
 
   const dropdownFilters = [
     {
@@ -744,45 +719,11 @@ export default function InboxScreen() {
     />
   ), [selectedIds, handleChatPress, handleChatLongPress]);
 
-  const bulkSetStarred = useSyncStore((state) => state.bulkSetStarred);
-  const bulkSetPinned = useSyncStore((state) => state.bulkSetPinned);
-
-  // ── Chat actions (optimistic + batch API) ─────────────────────────────────
-  const togglePin = useCallback(async (chatId: string) => {
-    const current = chats.find((c) => c.id === chatId);
-    if (!current) return;
-    await bulkSetPinned([chatId], !current.pinned);
-  }, [chats, bulkSetPinned]);
-
-  const toggleStar = useCallback(async (chatId: string) => {
-    const current = chats.find((c) => c.id === chatId);
-    if (!current) return;
-    await bulkSetStarred([chatId], !current.isStarred);
-  }, [chats, bulkSetStarred]);
-
-  // ── Bulk actions ───────────────────────────────────────────────────────────
-  // If every selected chat already has the flag, the button removes it; otherwise it sets it on all
-  const bulkStar = () => {
-    const ids = Array.from(selectedIds);
-    const allOn = ids.every((id) => chats.find((c) => c.id === id)?.isStarred);
-    bulkSetStarred(ids, !allOn);
-  };
-
-  const bulkPin = () => {
-    const ids = Array.from(selectedIds);
-    const allOn = ids.every((id) => chats.find((c) => c.id === id)?.pinned);
-    bulkSetPinned(ids, !allOn);
-  };
-
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
 
-  const bulkMute = () => {
-    Alert.alert('Mute', `Mute ${selectedIds.size} chats? (feature coming soon)`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Mute', onPress: () => clearSelection() },
-    ]);
-  };
+
+  const activeDropdownCount = [...topFilters, ...dropdownFilters].filter((f) => f.selectedValue !== 'All').length;
 
   const renderDropdownFilter = (filter: any, flex1: boolean = false) => (
     <NativeDropdown
@@ -790,28 +731,26 @@ export default function InboxScreen() {
       expanded={openDropdown === filter.label}
       onDismissRequest={() => setOpenDropdown(null)}
       onRequestOpen={() => setOpenDropdown(filter.label)}
-      style={flex1 ? { flex: 1, height: 38 } : { width: 140, height: 38 }}
+      style={flex1 ? { flex: 1, height: 36 } : { width: 156, height: 36 }}
 
       trigger={
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          paddingHorizontal: 12,
-          borderRadius: 8,
-          backgroundColor: colors.surfaceContainerLow,
-          borderWidth: 1,
-          borderColor: colors.divider,
+          paddingHorizontal: 14,
+          borderRadius: 18,
+          backgroundColor: filter.selectedValue === 'All' ? colors.surfaceContainerLow : colors.primaryTint,
           height: '100%',
           width: '100%',
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <Icon name={filter.icon as any} size={16} color={colors.primary} />
-            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '600', color: colors.primary, flex: 1 }}>
+            <Icon name={filter.icon as any} size={16} color={filter.selectedValue === 'All' ? colors.onSurfaceVariant : colors.primary} />
+            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: filter.selectedValue === 'All' ? '500' : '700', color: filter.selectedValue === 'All' ? colors.onSurfaceVariant : colors.primary, flex: 1 }}>
               {filter.selectedValue === 'All' ? filter.label : filter.options.find((o: any) => o.value === filter.selectedValue)?.label || filter.selectedValue}
             </Text>
           </View>
-          <Icon name="expand-more" size={18} color={colors.primary} style={{ marginLeft: 4 }} />
+          <Icon name="expand-more" size={18} color={colors.outline} style={{ marginLeft: 4 }} />
         </View>
       }
       actions={filter.options.map((opt: any) => ({
@@ -839,51 +778,63 @@ export default function InboxScreen() {
       {/* Search & Tab Filters */}
       <View style={{
         paddingHorizontal: 16, paddingTop: 8,
-        paddingBottom: 8, backgroundColor: colors.surfaceContainerLowest,
-        borderBottomWidth: 1, borderBottomColor: colors.divider,
-        shadowColor: '#000', shadowOpacity: isDark ? 0.2 : 0.04, shadowRadius: 4, elevation: 2,
+        paddingBottom: 10, backgroundColor: colors.surface,
       }}>
-        {/* Top Dropdowns */}
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-          {topFilters.map((filter) => renderDropdownFilter(filter, true))}
-        </View>
-
         {/* Search */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceContainerLow, borderRadius: 12, paddingHorizontal: 12, marginBottom: 10, height: 44 }}>
-          <Icon name="search" size={20} color={colors.outline} />
-          <TextInput
-            style={{ flex: 1, marginLeft: 8, fontSize: 15, color: colors.onSurface }}
-            placeholder="Search chats…"
-            placeholderTextColor={colors.outline}
-            value={searchText}
-            onChangeText={setSearchText}
-            clearButtonMode="while-editing"
-          />
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceContainerLow, borderRadius: 24, paddingLeft: 16, paddingRight: 6, marginBottom: 12, height: 48 }}>
+          <Icon name="search" size={22} color={colors.outline} />
+          <View style={{ flex: 1, marginLeft: 10, justifyContent: "center" }}>
+            {/* The native placeholder ignores the app font on some Samsung phones, so it is drawn as Text */}
+            {searchText.length === 0 && (
+              <Text pointerEvents="none" numberOfLines={1} style={{ position: "absolute", left: 0, right: 0, fontSize: 16, color: colors.outline }}>
+                Search chats
+              </Text>
+            )}
+            <TextInput
+              style={{ fontSize: 16, color: colors.onSurface, fontFamily: "PlusJakartaSans_400Regular", padding: 0 }}
+              accessibilityLabel="Search chats"
+              value={searchText}
+              onChangeText={setSearchText}
+              clearButtonMode="while-editing"
+            />
+          </View>
           {searchText.length > 0 && (
-            <Pressable onPress={() => setSearchText('')}>
-              <Icon name="cancel" size={18} color={colors.outline} />
+            <Pressable onPress={() => setSearchText('')} hitSlop={10} accessibilityLabel="Clear search">
+              <Icon name="cancel" size={20} color={colors.outline} />
             </Pressable>
           )}
+          <Pressable
+            onPress={() => setShowFilters((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={activeDropdownCount ? `Filters, ${activeDropdownCount} on` : "Filters"}
+            accessibilityState={{ expanded: showFilters }}
+            style={{ marginLeft: 8, height: 36, paddingHorizontal: 10, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: showFilters || activeDropdownCount ? colors.primaryTint : 'transparent' }}
+          >
+            <Icon name="tune" size={20} color={showFilters || activeDropdownCount ? colors.primary : colors.onSurfaceVariant} />
+            {activeDropdownCount > 0 && (
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>{activeDropdownCount}</Text>
+            )}
+          </Pressable>
         </View>
 
         {/* Tab filter pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {TAB_FILTERS.map((tab) => {
             const active = activeFilter === tab;
-            const displayLabel = tab === 'Unread' ? `Unread (${totalUnreadChats})` : tab;
+            const displayLabel = tab === 'Unread' && totalUnreadChats > 0 ? `Unread ${totalUnreadChats}` : tab;
             return (
               <HapticPressable
                 hapticType="heavy"
                 key={tab}
                 onPress={() => setActiveFilter(tab)}
+                hitSlop={{ top: 6, bottom: 6 }}
                 style={{
-                  paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                  backgroundColor: active ? colors.primary : colors.surfaceContainerLow,
-                  borderWidth: active ? 0 : 1,
-                  borderColor: colors.divider,
+                  paddingHorizontal: 14, height: 36, justifyContent: 'center', borderRadius: 18,
+                  backgroundColor: active ? colors.primaryTint : colors.surfaceContainerLow,
                 }}
               >
-                <Text style={{ fontSize: 14, fontWeight: '600', color: active ? colors.onPrimary : colors.primary }}>
+                <Text style={{ fontSize: 14, fontWeight: active ? '700' : '500', color: active ? colors.primary : colors.onSurfaceVariant }}>
                   {displayLabel}
                 </Text>
               </HapticPressable>
@@ -891,14 +842,14 @@ export default function InboxScreen() {
           })}
         </ScrollView>
 
-        {/* Bottom Dropdowns */}
-        <ScrollView
+        {/* Dropdown filters (channel, account, department…) open from the button in the search bar */}
+        {showFilters && <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 6, paddingTop: 10 }}
+          contentContainerStyle={{ gap: 8, paddingTop: 10 }}
         >
-          {dropdownFilters.map((filter) => renderDropdownFilter(filter, false))}
-        </ScrollView>
+          {[...topFilters, ...dropdownFilters].map((filter) => renderDropdownFilter(filter, false))}
+        </ScrollView>}
       </View>
 
       {/* Chat list */}
@@ -906,19 +857,19 @@ export default function InboxScreen() {
         {isSyncing && chats.length === 0 ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
             <LoadingSpinner size={44} iconName="sync" />
-            <Text style={{ fontSize: 14, color: '#737782' }}>
+            <Text style={{ fontSize: 14, color: colors.outline }}>
               {syncProgress?.label ?? 'Loading chats…'}
             </Text>
             {(syncProgress?.chatsSynced ?? 0) > 0 && (
-              <Text style={{ fontSize: 12, color: '#9aa0a6' }}>
+              <Text style={{ fontSize: 12, color: colors.outline }}>
                 {syncProgress!.chatsSynced} chats synced
               </Text>
             )}
           </View>
         ) : filteredChats.length === 0 && !isSyncing ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-            <Icon name="inbox" size={48} color="#d0d6f9" />
-            <Text style={{ fontSize: 15, color: '#9aa0a6' }}>
+            <Icon name="inbox" size={48} color={colors.outlineVariant} />
+            <Text style={{ fontSize: 15, color: colors.outline }}>
               {searchText ? 'No chats matching your search' : 'No chats in this filter'}
             </Text>
           </View>
@@ -937,14 +888,14 @@ export default function InboxScreen() {
               isLoadingMoreChats ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 }}>
                   <LoadingSpinner size={18} />
-                  <Text style={{ fontSize: 13, color: '#9aa0a6' }}>
+                  <Text style={{ fontSize: 13, color: colors.outline }}>
                     Loading more chats…
                   </Text>
                 </View>
               ) : isSyncing && chats.length > 0 ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 }}>
                   <LoadingSpinner size={16} />
-                  <Text style={{ fontSize: 12, color: '#9aa0a6' }}>
+                  <Text style={{ fontSize: 12, color: colors.outline }}>
                     {syncProgress?.label ?? 'Syncing…'}
                   </Text>
                 </View>
@@ -959,8 +910,8 @@ export default function InboxScreen() {
       {!selecting && (
         <View style={{
           position: 'absolute',
-          bottom: 96 + insets.bottom,
-          right: 20,
+          bottom: 84 + insets.bottom,
+          right: 16,
           alignItems: 'flex-end',
           zIndex: 9999,
         }}>
@@ -969,7 +920,7 @@ export default function InboxScreen() {
               {/* Option: Sync Filters */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{
-                  backgroundColor: 'rgba(0, 50, 107, 0.9)',
+                  backgroundColor: isDark ? colors.surfaceContainerHighest : colors.onSurface,
                   paddingHorizontal: 10,
                   paddingVertical: 5,
                   borderRadius: 6,
@@ -992,7 +943,7 @@ export default function InboxScreen() {
                     width: 42,
                     height: 42,
                     borderRadius: 21,
-                    backgroundColor: '#dde3f9',
+                    backgroundColor: colors.primaryTint,
                     alignItems: 'center',
                     justifyContent: 'center',
                     elevation: 4,
@@ -1002,14 +953,14 @@ export default function InboxScreen() {
                     shadowOffset: { width: 0, height: 2 },
                   }}
                 >
-                  <Icon name="sync" size={20} color="#00326b" />
+                  <Icon name="sync" size={20} color={colors.primary} />
                 </Pressable>
               </View>
 
               {/* Option: Add Contact */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{
-                  backgroundColor: 'rgba(0, 50, 107, 0.9)',
+                  backgroundColor: isDark ? colors.surfaceContainerHighest : colors.onSurface,
                   paddingHorizontal: 10,
                   paddingVertical: 5,
                   borderRadius: 6,
@@ -1026,7 +977,7 @@ export default function InboxScreen() {
                     width: 42,
                     height: 42,
                     borderRadius: 21,
-                    backgroundColor: '#dde3f9',
+                    backgroundColor: colors.primaryTint,
                     alignItems: 'center',
                     justifyContent: 'center',
                     elevation: 4,
@@ -1036,14 +987,14 @@ export default function InboxScreen() {
                     shadowOffset: { width: 0, height: 2 },
                   }}
                 >
-                  <Icon name="person-add" size={20} color="#00326b" />
+                  <Icon name="person-add" size={20} color={colors.primary} />
                 </Pressable>
               </View>
 
               {/* Option: New Chat */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{
-                  backgroundColor: 'rgba(0, 50, 107, 0.9)',
+                  backgroundColor: isDark ? colors.surfaceContainerHighest : colors.onSurface,
                   paddingHorizontal: 10,
                   paddingVertical: 5,
                   borderRadius: 6,
@@ -1060,7 +1011,7 @@ export default function InboxScreen() {
                     width: 42,
                     height: 42,
                     borderRadius: 21,
-                    backgroundColor: '#dde3f9',
+                    backgroundColor: colors.primaryTint,
                     alignItems: 'center',
                     justifyContent: 'center',
                     elevation: 4,
@@ -1070,7 +1021,7 @@ export default function InboxScreen() {
                     shadowOffset: { width: 0, height: 2 },
                   }}
                 >
-                  <Icon name="chat" size={20} color="#00326b" />
+                  <Icon name="chat" size={20} color={colors.primary} />
                 </Pressable>
               </View>
             </View>
@@ -1083,17 +1034,17 @@ export default function InboxScreen() {
               width: 56,
               height: 56,
               borderRadius: 18,
-              backgroundColor: '#00326b',
+              backgroundColor: colors.primary,
               alignItems: 'center',
               justifyContent: 'center',
-              shadowColor: '#00326b',
+              shadowColor: '#000',
               shadowOpacity: 0.4,
               shadowRadius: 12,
               shadowOffset: { width: 0, height: 4 },
               elevation: 8,
             }}
           >
-            <Icon name={fabExpanded ? "close" : "add"} size={28} color="#ffffff" />
+            <Icon name={fabExpanded ? "close" : "add"} size={28} color={colors.onPrimary} />
           </Pressable>
         </View>
       )}

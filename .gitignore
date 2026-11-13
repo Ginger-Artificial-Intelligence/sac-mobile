@@ -44,3 +44,6 @@ example
 
 # IDE caches
 .idea/caches/
+
+# design review screenshots (real customer data; keep local)
+.impeccable/review/

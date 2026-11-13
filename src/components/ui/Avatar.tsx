@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Image, ImageProps, View } from "react-native";
 import { cn } from "../../lib/utils";
 import { Text } from "./Text";
+import { useThemeStore } from "../../store/themeStore";
 
 export interface AvatarProps extends Omit<ImageProps, "source"> {
   source?: ImageProps["source"];
@@ -12,11 +13,12 @@ export interface AvatarProps extends Omit<ImageProps, "source"> {
 
 export function Avatar({ source, fallback, size = 40, className, ...props }: AvatarProps) {
   const [hasError, setHasError] = useState(false);
+  const colors = useThemeStore((s) => s.colors);
 
   return (
     <View
-      className={cn("overflow-hidden bg-surface-container flex items-center justify-center shrink-0", className)}
-      style={{ width: size, height: size, borderRadius: size / 2 }}
+      className={cn("overflow-hidden flex items-center justify-center shrink-0", className)}
+      style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.primaryTint }}
     >
       {source && !hasError ? (
         <Image
@@ -27,7 +29,7 @@ export function Avatar({ source, fallback, size = 40, className, ...props }: Ava
           {...props}
         />
       ) : (
-        <Text className="text-on-surface-variant font-medium" style={{ fontSize: size * 0.4 }}>
+        <Text style={{ fontSize: size * 0.4, fontWeight: "700", color: colors.primary }}>
           {fallback?.charAt(0).toUpperCase() || "?"}
         </Text>
       )}

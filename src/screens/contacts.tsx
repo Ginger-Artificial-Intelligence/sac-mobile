@@ -1,7 +1,6 @@
 import { View, TextInput, Pressable, ScrollView, Alert } from "react-native";
 import { Text } from "../components/ui/Text";
 import { Icon } from "../components/ui/Icon";
-import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { LoadingSpinner } from "../components/ui/Loading";
 import { NativeDropdown } from "../components/ui/NativeDropdown";
@@ -14,6 +13,7 @@ import API from "../config/axios";
 import { storage } from "../store/mmkv";
 import { useThemeStore } from "../store/themeStore";
 import { useNewContactSheet } from "../store/newContactStore";
+import { useShellNav } from "../store/shellNavStore";
 import { AccountPickerModal } from "../components/contacts/AccountPickerModal";
 import * as DocumentPicker from "expo-document-picker";
 
@@ -241,6 +241,7 @@ export default function ContactsScreen() {
   // CSV import: POST /contacts as multipart (field "contacts"). Columns: name, contacts (phone with
   // country code); optional username, channel, group. The WhatsApp account is always chosen explicitly
   // first (nothing is assumed), and nothing is uploaded until one is picked.
+  const [showAccountFilter, setShowAccountFilter] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
   const runImport = async (accountId: string) => {
@@ -271,6 +272,15 @@ export default function ContactsScreen() {
       setImporting(false);
     }
   };
+  // The Import button sits in the shell header and asks for an import through this counter
+  const importNonce = useShellNav((s) => s.importNonce);
+  const importSeen = useRef(importNonce);
+  useEffect(() => {
+    if (importNonce === importSeen.current) return;
+    importSeen.current = importNonce;
+    importCsv();
+  }, [importNonce]);
+
   const importCsv = () =>
     Alert.alert("Import contacts", "Choose a CSV file with the columns “name” and “contacts” (the phone number with country code). Optional: username, channel, group.", [
       { text: "Cancel", style: "cancel" },
@@ -281,61 +291,60 @@ export default function ContactsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: colors.surfaceContainerLowest, borderBottomWidth: 1, borderBottomColor: colors.divider, marginBottom: 4 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <Text style={{ fontSize: 24, fontWeight: "700", color: colors.primary }}>Contacts</Text>
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-            <Pressable
-              onPress={() => useNewContactSheet.getState().open("contact")}
-              style={{ backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 5 }}
-            >
-              <Icon name="add" size={16} color={colors.onPrimary} />
-              <Text style={{ color: colors.onPrimary, fontWeight: "600", fontSize: 14 }}>Add</Text>
-            </Pressable>
-            <Pressable
-              onPress={importCsv}
-              disabled={importing}
-              style={{ backgroundColor: colors.surfaceContainerLow, padding: 8, borderRadius: 10, opacity: importing ? 0.5 : 1 }}
-            >
-              {importing ? <LoadingSpinner size={18} /> : <Icon name="upload" size={18} color={colors.primary} />}
-            </Pressable>
-          </View>
-        </View>
-
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6, backgroundColor: colors.surface }}>
         {/* Search */}
-        <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceContainerLow, borderRadius: 12, paddingHorizontal: 12, height: 44, marginBottom: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceContainerLow, borderRadius: 24, paddingLeft: 16, paddingRight: 6, height: 48, marginBottom: 12 }}>
           <Icon name="search" size={20} color={colors.outline} />
-          <TextInput
-            style={{ flex: 1, marginLeft: 8, fontSize: 15, color: colors.onSurface }}
-            placeholder="Search by name, phone, email…"
-            placeholderTextColor={colors.outline}
-            value={searchText}
-            onChangeText={setSearchText}
-            clearButtonMode="while-editing"
-          />
+          <View style={{ flex: 1, marginLeft: 10, justifyContent: "center" }}>
+            {/* The native placeholder ignores the app font on some Samsung phones, so it is drawn as Text */}
+            {searchText.length === 0 && (
+              <Text pointerEvents="none" numberOfLines={1} style={{ position: "absolute", left: 0, right: 0, fontSize: 16, color: colors.outline }}>
+                {total ? `Search ${total.toLocaleString()} contacts` : "Search name, phone or email"}
+              </Text>
+            )}
+            <TextInput
+              style={{ fontSize: 16, color: colors.onSurface, fontFamily: "PlusJakartaSans_400Regular", padding: 0 }}
+              accessibilityLabel="Search name, phone or email"
+              value={searchText}
+              onChangeText={setSearchText}
+              clearButtonMode="while-editing"
+            />
+          </View>
           {searchText.length > 0 && (
-            <Pressable onPress={() => setSearchText("")}>
-              <Icon name="cancel" size={18} color={colors.outline} />
+            <Pressable onPress={() => setSearchText("")} hitSlop={10} accessibilityLabel="Clear search">
+              <Icon name="cancel" size={20} color={colors.outline} />
+            </Pressable>
+          )}
+          {accountOptions.length > 1 && (
+            <Pressable
+              onPress={() => setShowAccountFilter((v) => !v)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Filter by account"
+              accessibilityState={{ expanded: showAccountFilter }}
+              style={{ marginLeft: 8, width: 40, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: showAccountFilter || account !== "All" ? colors.primaryTint : "transparent" }}
+            >
+              <Icon name="tune" size={20} color={showAccountFilter || account !== "All" ? colors.primary : colors.onSurfaceVariant} />
             </Pressable>
           )}
         </View>
 
         {/* Account dropdown (only when accounts are known) */}
-        {accountOptions.length > 1 && (
+        {accountOptions.length > 1 && (showAccountFilter || account !== "All") && (
           <NativeDropdown
             expanded={accountMenuOpen}
             onDismissRequest={() => setAccountMenuOpen(false)}
             onRequestOpen={() => setAccountMenuOpen(true)}
             style={{ height: 38, marginBottom: 10 }}
             trigger={
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderRadius: 8, backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: colors.divider, height: "100%", width: "100%" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, height: "100%", width: "100%" }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
-                  <Icon name="account-circle" size={16} color={colors.primary} />
-                  <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: colors.primary, flex: 1 }}>
+                  <Icon name="account-circle" size={16} color={colors.onSurfaceVariant} />
+                  <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "500", color: colors.onSurfaceVariant, flex: 1 }}>
                     {selectedAccountLabel}
                   </Text>
                 </View>
-                <Icon name="expand-more" size={18} color={colors.primary} />
+                <Icon name="expand-more" size={18} color={colors.outline} />
               </View>
             }
             actions={accountOptions.map((o) => ({
@@ -348,7 +357,7 @@ export default function ContactsScreen() {
         )}
 
         {/* Channel pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {CHANNEL_FILTERS.map((ch) => {
             const active = channel === ch;
             return (
@@ -356,12 +365,11 @@ export default function ContactsScreen() {
                 key={ch}
                 onPress={() => setChannel(ch)}
                 style={{
-                  paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                  backgroundColor: active ? colors.primary : colors.surfaceContainerLow,
-                  borderWidth: active ? 0 : 1, borderColor: colors.divider,
+                  paddingHorizontal: 14, height: 36, justifyContent: "center", borderRadius: 18,
+                  backgroundColor: active ? colors.primaryTint : colors.surfaceContainerLow,
                 }}
               >
-                <Text style={{ fontSize: 14, fontWeight: "600", color: active ? colors.onPrimary : colors.primary, textTransform: "capitalize" }}>
+                <Text style={{ fontSize: 14, fontWeight: active ? "700" : "500", color: active ? colors.primary : colors.onSurfaceVariant, textTransform: "capitalize" }}>
                   {ch === "All" ? "All Channels" : ch}
                 </Text>
               </Pressable>
@@ -369,14 +377,12 @@ export default function ContactsScreen() {
           })}
         </ScrollView>
 
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, gap: 6 }}>
-          <Text style={{ fontSize: 13.5, color: colors.outline }}>
-            {offline
-              ? `${data.length} saved on this device (offline)`
-              : `${total ?? data.length} contact${(total ?? data.length) !== 1 ? "s" : ""}`}
+        {/* Offline notice only; the count lives in the search placeholder, Add and Import in the header */}
+        {offline && (
+          <Text style={{ fontSize: 13.5, color: colors.outline, marginTop: 10 }} numberOfLines={1}>
+            {data.length} saved on this device (offline)
           </Text>
-          {loading && <LoadingSpinner size={14} />}
-        </View>
+        )}
       </View>
 
       <FlashList
@@ -394,7 +400,7 @@ export default function ContactsScreen() {
             </View>
           ) : (
             <View style={{ alignItems: "center", paddingTop: 60, gap: 10 }}>
-              <Icon name="people-outline" size={48} color="#d0d6f9" />
+              <Icon name="people-outline" size={48} color={colors.outlineVariant} />
               <Text style={{ fontSize: 16, color: colors.outline }}>No contacts found</Text>
             </View>
           )
@@ -409,34 +415,36 @@ export default function ContactsScreen() {
         contentContainerStyle={{ paddingBottom: 112 + Math.max(insets.bottom, 16) }}
         showsVerticalScrollIndicator={false}
         renderItem={({ item: contact }) => (
-          <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
-            <Pressable onPress={() => openInfo(contact)} onLongPress={() => openChat(contact)}>
-              <Card className="p-4">
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View>
+            <Pressable
+              onPress={() => openInfo(contact)}
+              onLongPress={() => openChat(contact)}
+              android_ripple={{ color: colors.primaryTint }}
+            >
+              <View style={{ paddingLeft: 16, paddingRight: 6, minHeight: 72, justifyContent: "center" }}>
+                <View pointerEvents="none" style={{ position: "absolute", left: 76, right: 0, bottom: 0, height: 1, backgroundColor: colors.divider }} />
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
-                    <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: isDark ? "#1e3048" : "#dde3f9", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center", marginRight: 12 }}>
                       <Text style={{ fontSize: 19, fontWeight: "700", color: colors.primary }}>
                         {contact.name?.charAt(0)?.toUpperCase() ?? "?"}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <Text style={{ fontWeight: "700", fontSize: 16.5, color: colors.onSurface }}>{contact.name}</Text>
+                        <Text numberOfLines={1} style={{ fontWeight: "600", fontSize: 16.5, lineHeight: 22, color: colors.onSurface, flexShrink: 1 }}>{contact.name}</Text>
                         {contact.isBlocked && <Badge variant="secondary" label="Blocked" />}
                         {!contact.isBlocked && contact.status && <Badge variant="secondary" label={contact.status} />}
                       </View>
-                      <Text style={{ fontSize: 13.5, color: colors.outline, marginTop: 2 }}>
+                      <Text numberOfLines={1} style={{ fontSize: 14, lineHeight: 20, color: colors.outline, marginTop: 2 }}>
                         {contact.phone || contact.email || ""}
                         {contact.channel ? `  ·  ${contact.channel}` : ""}
                       </Text>
                     </View>
                   </View>
 
-                  <Pressable onPress={() => openChat(contact)} hitSlop={6} style={{ padding: 8 }}>
-                    <Icon name="chat" size={20} color={colors.primary} />
-                  </Pressable>
-                  <Pressable onPress={() => openInfo(contact)} hitSlop={6} style={{ padding: 8 }}>
-                    <Icon name="edit" size={20} color={colors.outline} />
+                  <Pressable onPress={() => openChat(contact)} accessibilityLabel="Open chat" style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+                    <Icon name="chat" size={22} color={colors.primary} />
                   </Pressable>
                   <NativeDropdown
                     expanded={openMenuId === contact.id}
@@ -451,7 +459,7 @@ export default function ContactsScreen() {
                     actions={menuActions(contact)}
                   />
                 </View>
-              </Card>
+              </View>
             </Pressable>
           </View>
         )}

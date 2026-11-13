@@ -12,6 +12,7 @@ import {
   Alert,
   BackHandler,
   Linking,
+  ToastAndroid,
 } from "react-native";
 import { copyText } from "../../lib/clipboard";
 import { lastCustomerMessageMs, isWindowClosed } from "../../lib/chatWindow";
@@ -58,6 +59,7 @@ const MessageBubble = React.memo(({
   onRetry,
   onDiscard,
   selected = false,
+  firstInRun = true,
   highlighted = false,
   selecting = false,
   pinned,
@@ -65,6 +67,7 @@ const MessageBubble = React.memo(({
   onToggleSelect,
 }: {
   selected?: boolean;
+  firstInRun?: boolean;
   highlighted?: boolean;
   selecting?: boolean;
   pinned?: boolean;
@@ -94,8 +97,9 @@ const MessageBubble = React.memo(({
       }
     }
     if (pinned !== undefined) (norm as any).pinned = pinned;
+    (norm as any).firstInRun = firstInRun;
     return norm;
-  }, [item.id, item.rawJson, item.status, item.text, item.type, item.mediaUrl, item.readReceipt, item.isOutgoing, accountId, reactionsMap, pinned]);
+  }, [item.id, item.rawJson, item.status, item.text, item.type, item.mediaUrl, item.readReceipt, item.isOutgoing, accountId, reactionsMap, pinned, firstInRun]);
   const failed = item.isOutgoing && item.status === "failed";
 
   const handleReply = useCallback(() => {
@@ -662,29 +666,55 @@ export default function ChatScreen() {
   // ── Jump to the message a reply quotes ─────────────────────────────────────
   const pendingJump = useRef<{ ids: string[]; tries: number } | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRetries = useRef(0);
 
+  // Every id a message can be quoted by (CRM id, WhatsApp wamid, ...). Worked out once per message and
+  // kept, so a tap does not re-read every message in the chat.
+  const idCache = useRef(new Map<string, string[]>());
   const idsOfMessage = (m: Message): string[] => {
-    const n: any = normalizeChatMessage(m);
-    return [m.id, n._id, n.messageId, n.wamid, n.message?.id, n.mid, n.message?.mid, n.message?.wamid].filter(Boolean).map(String);
+    const key = `${m.id}|${m.rawJson?.length ?? 0}`;
+    const hit = idCache.current.get(key);
+    if (hit) return hit;
+    let raw: any = {};
+    try {
+      raw = m.rawJson ? JSON.parse(m.rawJson) : {};
+    } catch {
+      /* keep the id alone */
+    }
+    const inner = raw?.message && typeof raw.message === "object" ? raw.message : {};
+    const ids = [m.id, raw._id, raw.id, raw.messageId, raw.message_id, raw.wamid, raw.mid, inner.id, inner.mid, inner.wamid]
+      .filter(Boolean)
+      .map(String);
+    idCache.current.set(key, ids);
+    return ids;
   };
 
+  const showHighlight = (id: string) => {
+    setHighlightId(id);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightId(null), 1800);
+  };
+
+  // Returns true when the jump is done (or nothing is pending), false when older messages are needed
   const tryJump = useCallback(() => {
     const job = pendingJump.current;
     if (!job) return true;
     const target = listMessages.find((m) => idsOfMessage(m).some((id) => job.ids.includes(id)));
-    if (target) {
-      const index = groupedData.findIndex((row) => row.id === target.id);
-      if (index >= 0) {
-        pendingJump.current = null;
-        listRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated: true });
-        setHighlightId(target.id);
-        if (highlightTimer.current) clearTimeout(highlightTimer.current);
-        highlightTimer.current = setTimeout(() => setHighlightId(null), 1800);
-        return true;
-      }
+    if (!target) return false;
+    const index = groupedData.findIndex((row) => row.id === target.id);
+    if (index < 0) {
+      // Loaded but not drawn yet (only the newest rows are drawn at first, or a search hides it):
+      // draw everything and finish on the next render, without fetching anything
+      if (searchOpen) setSearchOpen(false);
+      setRenderAll(true);
+      return true;
     }
-    return false;
-  }, [listMessages, groupedData]);
+    pendingJump.current = null;
+    scrollRetries.current = 0;
+    showHighlight(target.id);
+    listRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated: true });
+    return true;
+  }, [listMessages, groupedData, searchOpen]);
 
   const jumpToReply = useCallback(
     (replyTo: any) => {
@@ -694,10 +724,11 @@ export default function ChatScreen() {
       if (!ids.length) return;
       pendingJump.current = { ids, tries: 0 };
       hasUserScrolled.current = true;
-      setRenderAll(true);
       if (tryJump()) return;
-      if (hasMore) loadMoreMessages(); // not loaded yet: fetch older messages until it is found
-      else {
+      if (hasMore) {
+        if (Platform.OS === "android") ToastAndroid.show("Loading earlier messages…", ToastAndroid.SHORT);
+        loadMoreMessages(); // not loaded yet: fetch older messages until it is found
+      } else {
         pendingJump.current = null;
         Alert.alert("Message not found", "The original message is too far back or no longer available.");
       }
@@ -705,7 +736,7 @@ export default function ChatScreen() {
     [tryJump, loadMoreMessages, hasMore]
   );
 
-  // Keep looking in older messages as they arrive
+  // Finish a pending jump once the rows it needs are drawn, or keep loading older messages
   useEffect(() => {
     const job = pendingJump.current;
     if (!job) return;
@@ -718,6 +749,17 @@ export default function ChatScreen() {
       Alert.alert("Message not found", "The original message is too far back or no longer available.");
     }
   }, [groupedData]);
+
+  // The target row has not been measured yet: jump straight to its estimated spot, then settle on it on
+  // the next frames (up to 4 tries) instead of waiting a fixed delay
+  const onScrollToIndexFailed = useCallback((info: { index: number; averageItemLength: number }) => {
+    listRef.current?.scrollToOffset({ offset: Math.max(0, info.averageItemLength * info.index - 200), animated: false });
+    if (scrollRetries.current >= 4) return;
+    scrollRetries.current++;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.5, animated: scrollRetries.current >= 2 }))
+    );
+  }, []);
 
   const messageMenuActions = useMemo<MessageAction[]>(() => {
     const m = menuMsg;
@@ -739,10 +781,13 @@ export default function ChatScreen() {
     return list;
   }, [menuMsg, isGroupChat, isPinned, handleSwipeReply, copyMessages, togglePin, handleRetry, handleDiscard]);
 
-  const renderItem = useCallback(({ item }: { item: any }) => {
+  const renderItem = useCallback(({ item, index }: { item: any; index: number }) => {
     if ('isDateSeparator' in item) {
       return <DateSeparator dateStr={item.dateStr} />;
     }
+    // The list is newest first, so the message above this one on screen is the next item
+    const older = groupedData[index + 1];
+    const firstInRun = !older || 'isDateSeparator' in older || older.isOutgoing !== item.isOutgoing;
     return (
       <MessageBubble
         item={item}
@@ -754,13 +799,14 @@ export default function ChatScreen() {
         onDiscard={handleDiscard}
         selecting={selecting}
         selected={selectedIds.includes(item.id)}
+        firstInRun={firstInRun}
         highlighted={highlightId === item.id}
         pinned={pinOverrides[item.id]}
         onLongPress={openMenu}
         onToggleSelect={toggleSelect}
       />
     );
-  }, [chatAccountId, handleSwipeReply, isGroupChat, reactionsMap, handleRetry, handleDiscard, selecting, selectedIds, highlightId, pinOverrides, openMenu, toggleSelect]);
+  }, [chatAccountId, handleSwipeReply, isGroupChat, reactionsMap, handleRetry, handleDiscard, selecting, selectedIds, highlightId, pinOverrides, openMenu, toggleSelect, groupedData]);
 
   const renderFooter = useCallback(() => {
     if (messages.length === 0) return null;
@@ -923,7 +969,7 @@ export default function ChatScreen() {
               inverted
               initialNumToRender={8}
               maxToRenderPerBatch={6}
-              windowSize={7}
+              windowSize={11}
               removeClippedSubviews={false}
               updateCellsBatchingPeriod={50}
               onScroll={(e) => {
@@ -931,11 +977,7 @@ export default function ChatScreen() {
                 setShowScrollDown((cur) => (cur === away ? cur : away));
               }}
               scrollEventThrottle={64}
-              onScrollToIndexFailed={(info) => {
-                // The row is not measured yet: go near it, then try again
-                listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
-                setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.5, animated: true }), 120);
-              }}
+              onScrollToIndexFailed={onScrollToIndexFailed}
               onScrollBeginDrag={() => { hasUserScrolled.current = true; }}
               onMomentumScrollBegin={() => { hasUserScrolled.current = true; }}
               onEndReached={loadMoreMessages}

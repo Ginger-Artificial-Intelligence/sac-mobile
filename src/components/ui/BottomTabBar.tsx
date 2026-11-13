@@ -4,10 +4,13 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  useReducedMotion,
   SharedValue,
 } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon } from "./Icon";
+import { Text } from "./Text";
 import { useThemeStore } from "../../store/themeStore";
 import { HapticPressable } from "./HapticPressable";
 
@@ -30,167 +33,106 @@ const SPRING = {
   mass: 0.7,
 };
 
-const BAR_PADDING = 12;
-
-const PILL_WIDTH = 58;
-const PILL_HEIGHT = 40;
+// Material 3 navigation bar: a docked bar with an icon in a tinted pill and a label under it
+const BAR_HEIGHT = 68;
+const PILL_WIDTH = 60;
+const PILL_HEIGHT = 32;
+const PILL_TOP = 9;
 
 export function BottomTabBar({
   selectedIndex,
   onSelect,
   pagePosition,
 }: BottomTabBarProps) {
-  const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
+  const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
 
   const [contentWidth, setContentWidth] = useState(0);
-
   const indicatorX = useSharedValue(0);
-
-  const tabWidth =
-    contentWidth > 0
-      ? contentWidth / TABS.length
-      : 0;
+  const tabWidth = contentWidth > 0 ? contentWidth / TABS.length : 0;
 
   useEffect(() => {
     if (!tabWidth || pagePosition) return;
-
-    indicatorX.value = withSpring(
-      selectedIndex * tabWidth +
-      (tabWidth - PILL_WIDTH) / 2,
-      SPRING
-    );
+    const target = selectedIndex * tabWidth + (tabWidth - PILL_WIDTH) / 2;
+    indicatorX.value = reduceMotion ? target : withSpring(target, SPRING);
   }, [selectedIndex, tabWidth, pagePosition]);
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
-
     setContentWidth(width);
-
     const widthPerTab = width / TABS.length;
-
-    if (pagePosition) {
-      indicatorX.value =
-        pagePosition.value * widthPerTab +
-        (widthPerTab - PILL_WIDTH) / 2;
-    } else {
-      indicatorX.value =
-        selectedIndex * widthPerTab +
-        (widthPerTab - PILL_WIDTH) / 2;
-    }
+    const index = pagePosition ? pagePosition.value : selectedIndex;
+    indicatorX.value = index * widthPerTab + (widthPerTab - PILL_WIDTH) / 2;
   };
 
-  const indicatorAnimatedStyle =
-    useAnimatedStyle(() => {
-      if (!tabWidth) return { transform: [{ translateX: 0 }] };
-      if (pagePosition) {
-        const x = pagePosition.value * tabWidth + (tabWidth - PILL_WIDTH) / 2;
-        return {
-          transform: [{ translateX: x }],
-        };
-      }
-      return {
-        transform: [{ translateX: indicatorX.value }],
-      };
-    });
+  const indicatorAnimatedStyle = useAnimatedStyle(() => {
+    if (!tabWidth) return { transform: [{ translateX: 0 }] };
+    if (pagePosition) {
+      return { transform: [{ translateX: pagePosition.value * tabWidth + (tabWidth - PILL_WIDTH) / 2 }] };
+    }
+    return { transform: [{ translateX: indicatorX.value }] };
+  });
 
   return (
-    <View className="absolute bottom-6 left-6 right-6 z-50">
-      <View
-        className="h-20 rounded-full"
-        style={{
-          backgroundColor: isDark
-            ? "rgba(18, 29, 43, 0.96)"
-            : "rgba(255, 255, 255, 0.96)",
+    <View
+      className="absolute bottom-0 left-0 right-0 z-50"
+      style={{
+        backgroundColor: colors.surface,
+        borderTopWidth: 1,
+        borderTopColor: colors.divider,
+        paddingBottom: insets.bottom,
+      }}
+    >
+      <View onLayout={handleLayout} className="flex-row" style={{ height: BAR_HEIGHT }}>
+        {contentWidth > 0 && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              {
+                position: "absolute",
+                top: PILL_TOP,
+                width: PILL_WIDTH,
+                height: PILL_HEIGHT,
+                borderRadius: PILL_HEIGHT / 2,
+                backgroundColor: colors.primaryTint,
+              },
+              indicatorAnimatedStyle,
+            ]}
+          />
+        )}
 
-          borderWidth: 1,
-          borderColor: colors.divider,
-
-          shadowColor: isDark ? "#000" : "#00326b",
-          shadowOffset: {
-            width: 0,
-            height: 6,
-          },
-          shadowOpacity: isDark ? 0.35 : 0.1,
-          shadowRadius: 14,
-
-          elevation: 8,
-        }}
-      >
-        <View
-          onLayout={handleLayout}
-          className="flex-1 flex-row items-center"
-          style={{
-            marginHorizontal: BAR_PADDING,
-          }}
-        >
-          {/* ACTIVE PILL */}
-
-          {contentWidth > 0 && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                {
-                  position: "absolute",
-
-                  top: "50%",
-
-                  marginTop: -(PILL_HEIGHT / 2),
-
-                  width: PILL_WIDTH,
-                  height: PILL_HEIGHT,
-
-                  borderRadius: PILL_HEIGHT / 2,
-
-                  backgroundColor: isDark
-                    ? "rgba(171, 199, 255, 0.16)"
-                    : "rgba(0, 50, 107, 0.09)",
-                },
-
-                indicatorAnimatedStyle,
-              ]}
-            />
-          )}
-
-          {/* TAB BUTTONS */}
-
-          {TABS.map((tab, index) => {
-            const focused =
-              selectedIndex === index;
-
-            return (
-              <HapticPressable
-                key={tab.name}
-                hapticType="selection"
-                onPress={() => onSelect(index)}
-                className="h-full flex-1 items-center justify-center"
+        {TABS.map((tab, index) => {
+          const focused = selectedIndex === index;
+          return (
+            <HapticPressable
+              key={tab.name}
+              hapticType="selection"
+              onPress={() => onSelect(index)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
+              accessibilityLabel={tab.name}
+              className="flex-1 items-center"
+              style={{ zIndex: 2, paddingTop: PILL_TOP }}
+            >
+              <View style={{ width: PILL_WIDTH, height: PILL_HEIGHT, alignItems: "center", justifyContent: "center" }}>
+                <Icon name={tab.icon as any} size={22} color={focused ? colors.primary : colors.outline} />
+              </View>
+              <Text
+                numberOfLines={1}
                 style={{
-                  zIndex: 2,
+                  fontSize: 12,
+                  lineHeight: 16,
+                  marginTop: 3,
+                  fontWeight: focused ? "700" : "500",
+                  color: focused ? colors.onSurface : colors.outline,
                 }}
               >
-                <View
-                  style={{
-                    width: PILL_WIDTH,
-                    height: PILL_HEIGHT,
-
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Icon
-                    name={tab.icon as any}
-                    size={22}
-                    color={
-                      focused
-                        ? colors.primary
-                        : colors.outline
-                    }
-                  />
-                </View>
-              </HapticPressable>
-            );
-          })}
-        </View>
+                {tab.name}
+              </Text>
+            </HapticPressable>
+          );
+        })}
       </View>
     </View>
   );

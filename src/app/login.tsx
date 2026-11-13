@@ -1,4 +1,4 @@
-import { View, TextInput, Pressable, Platform, ScrollView, Keyboard, Image } from "react-native";
+import { View, TextInput, Pressable, Platform, ScrollView, Keyboard, Image, Linking } from "react-native";
 import { useRouter } from "expo-router";
 import { Text } from "../components/ui/Text";
 import { Icon } from "../components/ui/Icon";
@@ -9,6 +9,11 @@ import { useThemeStore } from "../store/themeStore";
 import { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IMAGE_PATHS } from "../constants/imagePaths";
+
+const SUPPORT_REGIONS = [
+  { region: "India", phone: "+91 80897 68686" },
+  { region: "Qatar", phone: "+974 7009 7100" },
+];
 
 type LoginForm = {
   email: string;
@@ -59,7 +64,7 @@ export default function LoginScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop: insets.top + 40,
@@ -71,38 +76,34 @@ export default function LoginScreen() {
       >
         {/* Branding header logo */}
         <View className="items-center mb-10">
-          <View 
-            style={{ 
-              backgroundColor: isDark ? "#172435" : "#ffffff",
-              borderColor: colors.divider,
-              borderWidth: 1,
+          <View
+            style={{
+              backgroundColor: colors.surfaceContainerLow,
             }}
-            className="w-18 h-18 rounded-2xl items-center justify-center mb-4 shadow-md overflow-hidden p-2"
+            className="w-18 h-18 rounded-2xl items-center justify-center mb-4 overflow-hidden p-2"
           >
-            <Image 
-              source={IMAGE_PATHS.app_logo} 
-              style={{ width: 56, height: 56, borderRadius: 10 }} 
-              resizeMode="contain" 
+            <Image
+              source={IMAGE_PATHS.app_logo}
+              style={{ width: 56, height: 56, borderRadius: 10 }}
+              resizeMode="contain"
             />
           </View>
-          <Text style={{ fontSize: 30, fontWeight: "900", color: colors.onSurface }} className="tracking-tight">SAC Crm</Text>
+          <Text style={{ fontSize: 30, lineHeight: 36, fontWeight: "800", color: colors.primary }} className="tracking-tight">SAC CRM</Text>
           <Text style={{ color: colors.outline, fontSize: 14.5, marginTop: 4 }}>Enterprise Sales & Communication Sync</Text>
         </View>
 
         {/* Input Fields Card */}
-        <View 
-          style={{ 
-            backgroundColor: colors.surfaceContainerLowest,
-            borderColor: colors.divider,
-            borderWidth: 1,
+        <View
+          style={{
+            backgroundColor: colors.surface,
           }}
-          className="rounded-2xl p-6 shadow-sm mb-6"
+          className="mb-6"
         >
-          <Text style={{ fontSize: 20, fontWeight: "700", color: colors.onSurface, marginBottom: 20 }}>Log In</Text>
+          <Text style={{ fontSize: 20, fontWeight: "700", color: colors.onSurface, marginBottom: 20 }}>Log in</Text>
 
           {/* Email input field */}
           <View className="mb-4">
-            <Text style={{ fontSize: 13.5, color: colors.outline, marginBottom: 8, fontWeight: "600" }}>Email Address</Text>
+            <Text style={{ fontSize: 13.5, color: colors.outline, marginBottom: 8, fontWeight: "600" }}>Email address</Text>
             <Controller
               control={control}
               name="email"
@@ -121,25 +122,31 @@ export default function LoginScreen() {
                   <TextInput
                     style={{
                       backgroundColor: colors.surfaceContainerLow,
-                      borderColor: errors.email ? "#ef4444" : colors.divider,
-                      borderWidth: 1,
+                      borderColor: errors.email ? colors.error : "transparent",
+                      borderWidth: 1.5,
                       color: colors.onSurface,
-                      fontSize: 15,
+                      fontSize: 16,
+                      fontFamily: "PlusJakartaSans_400Regular",
                     }}
-                    className="w-full rounded-lg py-3.5 pl-10 pr-4 font-body-md"
-                    placeholder="name@company.com"
-                    placeholderTextColor={colors.outline}
+                    className="w-full rounded-xl py-3.5 pl-10 pr-4 font-body-md"
+                    accessibilityLabel="Email address"
                     onBlur={onBlur}
                     onChangeText={onChange}
                     value={value}
                     autoCapitalize="none"
                     keyboardType="email-address"
                   />
+                  {/* The native placeholder ignores the app font on some Samsung phones, so it is drawn as Text */}
+                  {!value && (
+                    <Text pointerEvents="none" numberOfLines={1} style={{ position: "absolute", left: 40, right: 16, fontSize: 16, color: colors.outline }}>
+                      name@company.com
+                    </Text>
+                  )}
                 </View>
               )}
             />
             {errors.email && (
-              <Text className="text-red-500 text-xs mt-1">{errors.email.message}</Text>
+              <Text style={{ color: colors.error, fontSize: 12.5, marginTop: 4 }}>{errors.email.message}</Text>
             )}
           </View>
 
@@ -164,10 +171,11 @@ export default function LoginScreen() {
                   <TextInput
                     style={{
                       backgroundColor: colors.surfaceContainerLow,
-                      borderColor: errors.password ? "#ef4444" : colors.divider,
-                      borderWidth: 1,
+                      borderColor: errors.password ? colors.error : "transparent",
+                      borderWidth: 1.5,
                       color: colors.onSurface,
-                      fontSize: 15,
+                      fontSize: 16,
+                      fontFamily: "PlusJakartaSans_400Regular",
                     }}
                     className="w-full rounded-lg py-3.5 pl-10 pr-12 font-body-md"
                     placeholder="••••••••"
@@ -178,47 +186,64 @@ export default function LoginScreen() {
                     value={value}
                     autoCapitalize="none"
                   />
-                  <Pressable 
+                  <Pressable
                     className="absolute right-3 p-1 rounded-full active:opacity-75"
                     onPress={() => setShowPassword(!showPassword)}
                   >
-                    <Icon 
-                      name={showPassword ? "visibility-off" : "visibility"} 
-                      size={20} 
-                      color={colors.outline} 
+                    <Icon
+                      name={showPassword ? "visibility-off" : "visibility"}
+                      size={20}
+                      color={colors.outline}
                     />
                   </Pressable>
                 </View>
               )}
             />
             {errors.password && (
-              <Text className="text-red-500 text-xs mt-1">{errors.password.message}</Text>
+              <Text style={{ color: colors.error, fontSize: 12.5, marginTop: 4 }}>{errors.password.message}</Text>
             )}
           </View>
 
           {/* Submit Action Button */}
-          <Pressable 
+          <Pressable
             onPress={handleSubmit(onSubmit)}
             disabled={isLoading}
-            style={{ 
+            style={{
               backgroundColor: colors.primary,
               opacity: isLoading ? 0.8 : 1,
             }}
-            className="w-full py-3.5 rounded-xl items-center justify-center shadow-sm active:opacity-90"
+            className="w-full py-4 rounded-full items-center justify-center active:opacity-90"
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               {isLoading && <LoadingSpinner size={20} color={colors.onPrimary} iconName="sync" />}
               <Text style={{ color: colors.onPrimary, fontWeight: "700", fontSize: 16 }}>
-                {isLoading ? "Signing in…" : "Log In"}
+                {isLoading ? "Signing in…" : "Log in"}
               </Text>
             </View>
           </Pressable>
         </View>
 
-        {/* Footer info */}
-        <Text style={{ color: colors.outline, fontSize: 12.5 }} className="text-center mt-4">
-          Demo login. Enter any valid email and a 6+ char password.
-        </Text>
+        {/* Support contacts: tap a region to call it */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8, marginBottom: 14 }}>
+          <View style={{ flex: 1, height: 1, backgroundColor: colors.divider }} />
+          <Text style={{ color: colors.outline, fontSize: 12, fontWeight: "600", letterSpacing: 1 }}>SUPPORT REGIONS</Text>
+          <View style={{ flex: 1, height: 1, backgroundColor: colors.divider }} />
+        </View>
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          {SUPPORT_REGIONS.map((r) => (
+            <Pressable
+              key={r.region}
+              onPress={() => Linking.openURL(`tel:${r.phone.replace(/[^\d+]/g, "")}`).catch(() => {})}
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${r.region} support, ${r.phone}`}
+              className="active:opacity-70"
+              style={{ flex: 1, minHeight: 64, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: colors.surfaceContainerLow, borderWidth: 1, borderColor: colors.outlineVariant }}
+            >
+              <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "700", letterSpacing: 0.4 }}>{r.region.toUpperCase()}</Text>
+              <Text style={{ color: colors.onSurfaceVariant, fontSize: 14, marginTop: 6 }}>{r.phone}</Text>
+            </Pressable>
+          ))}
+        </View>
       </ScrollView>
     </View>
   );

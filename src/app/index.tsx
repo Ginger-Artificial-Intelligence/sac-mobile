@@ -17,6 +17,7 @@ import ProfileScreen from "../screens/profile";
 import { useSyncStore } from "../store/syncStore";
 import { useAfterTransition } from "../hooks/useAfterTransition";
 import { useNewContactSheet } from "../store/newContactStore";
+import { useShellNav } from "../store/shellNavStore";
 
 import { useSharedValue } from "react-native-reanimated";
 
@@ -29,7 +30,7 @@ export default function MainAppContainer() {
   const pagerRef = useRef<PagerView>(null);
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
-  
+
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showInboxMenu, setShowInboxMenu] = useState(false);
   const [isStarPressed, setIsStarPressed] = useState(false);
@@ -66,6 +67,12 @@ export default function MainAppContainer() {
     setSelectedIndex(index);
     pagerRef.current?.setPage(index);
   };
+
+  // Another tab (the dashboard) asked to show the inbox with a filter: switch to the Chats tab
+  const inboxNonce = useShellNav((s) => s.inboxNonce);
+  useEffect(() => {
+    if (inboxNonce > 0) handleTabSelect(0);
+  }, [inboxNonce]);
 
   // Mount the three off-screen tabs after the screen has finished appearing, so the inbox gets
   // the whole first frame instead of competing with Contacts/Dashboard/Profile.
@@ -158,7 +165,7 @@ export default function MainAppContainer() {
           rightAction: (
             <NativeDropdown
               expanded={showInboxMenu}
-            
+
               onDismissRequest={() => setShowInboxMenu(false)}
               onRequestOpen={() => setShowInboxMenu(true)}
               style={{ width: 44, height: 44 }}
@@ -168,8 +175,8 @@ export default function MainAppContainer() {
                 </View>
               }
               actions={[
-                { 
-                  label: "Full Sync Server Data", 
+                {
+                  label: "Full Sync Server Data",
                   icon: "cloud-sync",
                   onClick: async () => {
                     try {
@@ -180,8 +187,8 @@ export default function MainAppContainer() {
                     }
                   }
                 },
-                { 
-                  label: "Sync Filters", 
+                {
+                  label: "Sync Filters",
                   icon: "sync",
                   onClick: async () => {
                     try {
@@ -200,7 +207,28 @@ export default function MainAppContainer() {
           )
         };
       case 1:
-        return { title: "Contacts", hideMenu: true };
+        return {
+          title: "Contacts",
+          hideMenu: true,
+          rightAction: (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Pressable
+                onPress={() => useShellNav.getState().requestImport()}
+                accessibilityLabel="Import contacts"
+                style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="upload" size={24} color={colors.onSurfaceVariant} />
+              </Pressable>
+              <Pressable
+                onPress={() => useNewContactSheet.getState().open('contact')}
+                accessibilityLabel="Add contact"
+                style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="person-add" size={24} color={colors.primary} />
+              </Pressable>
+            </View>
+          ),
+        };
       case 2:
         return { title: "Dashboard", hideMenu: true };
       case 3:

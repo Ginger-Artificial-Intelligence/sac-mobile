@@ -13,14 +13,12 @@ export function Card({ className, style, ...props }: CardProps) {
     <View
       style={[
         {
-          backgroundColor: colors.surfaceContainerLowest,
-          borderColor: colors.divider,
-          borderWidth: 1,
+          backgroundColor: colors.surfaceContainerLow,
         },
         style,
       ]}
       className={cn(
-        "rounded-xl p-4",
+        "rounded-2xl p-4",
         className
       )}
       {...props}

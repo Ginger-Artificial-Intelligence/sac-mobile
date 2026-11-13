@@ -21,11 +21,16 @@ const paramValue = (param: any): string => String(param?.text ?? param?.value ??
 /** Fills {{1}} / {{name}} placeholders from a saved component's parameters */
 export const fillVariables = (text: unknown, params: unknown): string => {
   let out = String(text ?? "");
-  asArray<any>(params).forEach((param, index) => {
+  const list = asArray<any>(params);
+  // Named variables ({{name}}) in the order they appear: a value sent without its name fills the
+  // named variable at the same position
+  const named: string[] = [];
+  for (const m of out.matchAll(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g)) if (!named.includes(m[1])) named.push(m[1]);
+  list.forEach((param, index) => {
     const value = paramValue(param);
     out = out.split(`{{${index + 1}}}`).join(value);
-    const name = param?.parameter_name || param?.name;
-    if (name) out = out.split(`{{${name}}}`).join(value);
+    const name = param?.parameter_name || (typeof param?.name === "string" ? param.name : "") || named[index];
+    if (name) out = out.replace(new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`, "g"), value);
   });
   return out;
 };

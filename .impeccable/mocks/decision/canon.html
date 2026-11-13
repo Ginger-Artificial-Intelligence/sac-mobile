@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=390">
+<title>The category standard</title>
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:390px;height:844px;overflow:hidden;background:#fff;font-family:Roboto,system-ui,sans-serif;color:#111b21}
+.head{padding:56px 18px 10px;display:flex;justify-content:space-between;align-items:center}
+.head h1{font-size:24px;font-weight:700;color:#00326b}
+.head i{width:24px;height:24px;border-radius:12px;background:#dfe3e8;display:block}
+.search{margin:6px 16px 10px;height:44px;border-radius:22px;background:#f0f2f5;padding:13px 18px;font-size:14.5px;color:#667781}
+.chips{display:flex;gap:8px;padding:0 16px 10px}
+.chip{background:#f0f2f5;border-radius:16px;padding:7px 13px;font-size:13.5px;color:#54656f;font-weight:500}
+.chip.on{background:#d9fdd3;color:#0a6b3c}
+.row{display:flex;gap:14px;padding:11px 16px;height:74px}
+.av{width:50px;height:50px;border-radius:25px;background:#dfe5ee;color:#00326b;font-weight:600;font-size:17px;display:flex;align-items:center;justify-content:center;flex:none}
+.mid{flex:1;min-width:0;border-bottom:1px solid #f0f2f5}
+.l1{display:flex;justify-content:space-between;align-items:baseline}
+.l1 h3{font-size:16.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.l1 time{font-size:12px;color:#667781;flex:none;margin-left:8px}
+.l1 time.u{color:#1faa59;font-weight:500}
+.l2{display:flex;justify-content:space-between;align-items:center;margin-top:5px}
+.l2 p{font-size:14px;color:#667781;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b{flex:none;min-width:21px;height:21px;border-radius:11px;background:#25d366;color:#fff;font-size:12px;font-weight:600;line-height:21px;text-align:center;margin-left:8px}
+.fab{position:absolute;right:18px;bottom:98px;width:56px;height:56px;border-radius:16px;background:#00326b}
+.tabs{position:absolute;left:0;right:0;bottom:0;height:78px;background:#fff;border-top:1px solid #e9edef;display:flex;padding-top:12px}
+.tab{flex:1;text-align:center;font-size:12px;font-weight:500;color:#54656f}
+.tab i{display:block;width:56px;height:28px;border-radius:14px;margin:0 auto 5px;background:transparent;position:relative}
+.tab i:after{content:"";position:absolute;left:17px;top:3px;width:22px;height:22px;border-radius:6px;background:#aab4bd}
+.tab.on{color:#111b21;font-weight:700}.tab.on i{background:#d7e2ff}.tab.on i:after{background:#00326b}
+</style></head><body>
+<div class="head"><h1>SAC CRM</h1><i></i></div>
+<div class="search">Search</div>
+<div class="chips"><span class="chip on">All</span><span class="chip">Unread 14</span><span class="chip">Mine</span><span class="chip">Open</span></div>
+<div class="row"><div class="av">RM</div><div class="mid"><div class="l1"><h3>Rahul Menon</h3><time class="u">2:14 pm</time></div><div class="l2"><p>Payment done, please confirm the order</p><span class="b">5</span></div></div></div>
+<div class="row"><div class="av">LT</div><div class="mid"><div class="l1"><h3>Lakshmi Traders</h3><time class="u">2:40 pm</time></div><div class="l2"><p>Template approved? Need to send today</p><span class="b">3</span></div></div></div>
+<div class="row"><div class="av">+9</div><div class="mid"><div class="l1"><h3>+91 98470 11326</h3><time class="u">2:46 pm</time></div><div class="l2"><p>📷 Photo</p><span class="b">1</span></div></div></div>
+<div class="row"><div class="av">FN</div><div class="mid"><div class="l1"><h3>Fathima N.</h3><time class="u">2:50 pm</time></div><div class="l2"><p>Thank you, got the invoice</p><span class="b">2</span></div></div></div>
+<div class="row"><div class="av">GL</div><div class="mid"><div class="l1"><h3>Green Leaf Organics</h3><time>1:42 pm</time></div><div class="l2"><p>You: We will deliver by Friday</p></div></div></div>
+<div class="row"><div class="av">AK</div><div class="mid"><div class="l1"><h3>Arun K.</h3><time>11:05 am</time></div><div class="l2"><p>You: Shared the catalogue</p></div></div></div>
+<div class="row"><div class="av">NT</div><div class="mid"><div class="l1"><h3>Nisha Textiles</h3><time>9:20 am</time></div><div class="l2"><p>You: Sent the price list</p></div></div></div>
+<div class="fab"></div>
+<div class="tabs"><div class="tab"><i></i>Home</div><div class="tab on"><i></i>Inbox</div><div class="tab"><i></i>Contacts</div><div class="tab"><i></i>Profile</div></div>
+</body></html>

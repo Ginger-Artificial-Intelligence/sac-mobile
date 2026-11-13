@@ -4,11 +4,11 @@
 const trimSlash = (url: string) => url.replace(/\/+$/, '');
 
 export const GATEWAY_URL = trimSlash(
-  process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'https://eazycrm-apigateway.scribbleandconnect.com'
+  process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'https://premiumapigateway.scribbleandconnect.com'
 );
 
 export const BASE_URL = `${GATEWAY_URL}/api/v1/backend`;
 
 // Origin header sent on the socket handshake (the gateway checks it against its CORS allow-list).
 export const SOCKET_ORIGIN =
-  process.env.EXPO_PUBLIC_SOCKET_ORIGIN || 'https://eazycrm.scribbleandconnect.com';
+  process.env.EXPO_PUBLIC_SOCKET_ORIGIN || 'https://premiumcrm.scribbleandconnect.com';

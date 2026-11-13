@@ -20,21 +20,19 @@ export function TopAppBar({ title, onMenuPress, rightAction, hideMenu, largeTitl
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
   const [isMenuPressed, setIsMenuPressed] = useState(false);
-  
+
   return (
-    <View 
+    <View
       className="flex-row items-center justify-between px-container-padding"
-      style={{ 
+      style={{
         paddingTop: topPadding,
         height: 56 + topPadding,
-        backgroundColor: colors.surfaceContainerLowest,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.divider,
+        backgroundColor: colors.surface,
       }}
     >
       <View className="flex-row items-center gap-3 flex-1 mr-4">
         {!hideMenu && (
-          <Pressable 
+          <Pressable
             onPress={onMenuPress}
             onPressIn={() => setIsMenuPressed(true)}
             onPressOut={() => setIsMenuPressed(false)}
@@ -49,19 +47,22 @@ export function TopAppBar({ title, onMenuPress, rightAction, hideMenu, largeTitl
             <Icon name={(menuIcon || "menu") as any} size={24} color={colors.onSurfaceVariant} />
           </Pressable>
         )}
-        <Text 
-          numberOfLines={1} 
+        <Text
+          numberOfLines={1}
           style={{
-            fontSize: largeTitle ? 24 : 20,
-            fontWeight: largeTitle ? '800' : '600',
+            fontSize: largeTitle ? 26 : 22,
+            lineHeight: largeTitle ? 32 : 28,
+            fontWeight: largeTitle ? '800' : '700',
+            letterSpacing: -0.3,
             color: largeTitle ? colors.primary : colors.onSurface,
+            marginLeft: hideMenu ? 4 : 0,
           }}
           className="flex-1"
         >
           {title}
         </Text>
       </View>
-      
+
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', zIndex: 10 }}>
         {rightAction}
       </View>
