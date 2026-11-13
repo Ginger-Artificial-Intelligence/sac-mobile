@@ -60,10 +60,8 @@ export default function ProfileScreen() {
   const role = data?.role || storedRole || "";
 
   const rows: { icon: string; label: string; value: string }[] = [
-    { icon: "person", label: "Name", value: name },
     { icon: "email", label: "Email", value: email },
     { icon: "call", label: "Phone", value: data?.phone ?? "" },
-    { icon: "work", label: "Role", value: role },
     { icon: "domain", label: "Company", value: data?.company ?? "" },
     { icon: "workspace-premium", label: "Plan", value: data?.plan ?? "" },
     { icon: "schedule", label: "Timezone", value: [data?.timezone, data?.country].filter(Boolean).join(" · ") },
@@ -90,9 +88,7 @@ export default function ProfileScreen() {
               borderRadius: 56,
               flexShrink: 0,
               alignSelf: "center",
-              backgroundColor: isDark ? "#172435" : "#dde3f9",
-              borderColor: colors.surfaceContainerLowest,
-              borderWidth: 4,
+              backgroundColor: colors.primaryTint,
               overflow: "hidden",
               alignItems: "center",
               justifyContent: "center",
@@ -115,7 +111,7 @@ export default function ProfileScreen() {
           <Pressable
             onPress={() => refetch()}
             className="mx-4 mb-4 px-4 py-3 rounded-lg flex-row items-center justify-between"
-            style={{ backgroundColor: colors.surfaceContainerLow, borderColor: colors.divider, borderWidth: 1 }}
+            style={{ backgroundColor: colors.surfaceContainerLow }}
           >
             <Text style={{ color: colors.onSurfaceVariant, fontSize: 13, flex: 1 }}>
               Could not load your full profile. Tap to retry.
@@ -141,17 +137,17 @@ export default function ProfileScreen() {
           {/* Appearance */}
           <View className="px-4 py-3">
             <View className="flex-row items-center mb-2.5">
-              <View className="w-10 items-center justify-center -ml-4">
+              <View className="w-10 items-center justify-center">
                 <Icon name={isDark ? "dark-mode" : "light-mode"} size={24} color={colors.outline} />
               </View>
               <View className="flex-1">
-                <Text style={{ fontSize: 13, color: colors.outline }}>Appearance Mode</Text>
+                <Text style={{ fontSize: 13, color: colors.outline }}>Appearance</Text>
               </View>
             </View>
 
             <View
-              style={{ backgroundColor: colors.surfaceContainerLow, borderColor: colors.divider, borderWidth: 1 }}
-              className="flex-row rounded-xl p-1 gap-1"
+              style={{ backgroundColor: colors.surfaceContainerLow }}
+              className="flex-row rounded-full p-1 gap-1"
             >
               {(["light", "dark", "system"] as ThemeMode[]).map((mode) => {
                 const isSelected = themeMode === mode;
@@ -162,11 +158,9 @@ export default function ProfileScreen() {
                     key={mode}
                     onPress={() => setThemeMode(mode)}
                     style={{
-                      backgroundColor: isSelected ? colors.surfaceContainerLowest : "transparent",
-                      borderWidth: isSelected ? 1 : 0,
-                      borderColor: isSelected ? colors.divider : "transparent",
+                      backgroundColor: isSelected ? colors.primaryTint : "transparent",
                     }}
-                    className={`flex-1 flex-row items-center justify-center py-2 px-2 rounded-lg gap-1.5 ${isSelected ? "shadow-xs" : "opacity-75"}`}
+                    className="flex-1 flex-row items-center justify-center py-2.5 px-2 rounded-full gap-1.5"
                   >
                     <Icon name={modeIcon as any} size={16} color={isSelected ? colors.primary : colors.outline} />
                     <Text style={{ fontSize: 12.5, fontWeight: "700", color: isSelected ? colors.primary : colors.outline }}>
@@ -181,10 +175,10 @@ export default function ProfileScreen() {
           {/* Log out */}
           <Pressable onPress={confirmLogout} className="flex-row items-center px-4 py-3 mt-4 rounded-lg active:opacity-70">
             <View className="w-10 items-center justify-center">
-              <Icon name="logout" size={24} color={isDark ? "#f87171" : "#dc2626"} />
+              <Icon name="logout" size={24} color={colors.error} />
             </View>
-            <View style={{ borderBottomColor: colors.divider, borderBottomWidth: 1 }} className="flex-1 pb-3 pt-1">
-              <Text style={{ fontSize: 16, fontWeight: "700", color: isDark ? "#f87171" : "#dc2626" }}>Log Out</Text>
+            <View className="flex-1 pb-3 pt-1">
+              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.error }}>Log out</Text>
             </View>
           </Pressable>
         </View>

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T00:00:00Z",
+  "title": "Design System: SAC Mobile",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Deep Brand Navy", "canonical": "#00326b", "dark": "#a9c7ff", "tonalRamp": ["#001a3d", "#00326b", "#10488f", "#3a6bb0", "#7d9fd0", "#a9c7ff", "#d7e2ff", "#eef3ff"] },
+      "primary-tint": { "role": "primary", "displayName": "Pale Navy Tint", "canonical": "#e4ecfa", "dark": "rgba(169,199,255,0.16)", "tonalRamp": ["#10488f", "#3a6bb0", "#7d9fd0", "#b3c8e8", "#cddcf3", "#e4ecfa", "#f0f5fd", "#f8faff"] },
+      "unread-green": { "role": "secondary", "displayName": "Unread Green", "canonical": "#0e8344", "dark": "#2fd27a", "tonalRamp": ["#04210f", "#0a5a2e", "#0e8344", "#2fa066", "#6fc296", "#a6dcc0", "#d8f5e4", "#effaf4"] },
+      "success-text": { "role": "secondary", "displayName": "Success Green Text", "canonical": "#0b7a3e", "dark": "#4ede7d", "tonalRamp": ["#04210f", "#085a2d", "#0b7a3e", "#2f9a5e", "#6fbc90", "#a6d8bc", "#d8f5e4", "#effaf4"] },
+      "surface": { "role": "neutral", "displayName": "White Ground", "canonical": "#ffffff", "dark": "#0f1620", "tonalRamp": ["#0f1620", "#18212d", "#243140", "#8a95a5", "#cfd6e1", "#e2e9f3", "#f3f6fb", "#ffffff"] },
+      "surface-well": { "role": "neutral", "displayName": "Navy-Tinted Well", "canonical": "#f3f6fb", "dark": "#18212d", "tonalRamp": ["#0f1a2a", "#414b5a", "#667085", "#a9b3c2", "#cfd6e1", "#e2e9f3", "#ebf0f7", "#f3f6fb"] },
+      "on-surface": { "role": "neutral", "displayName": "Ink Navy", "canonical": "#0f1a2a", "dark": "#e6ebf2", "tonalRamp": ["#0f1a2a", "#1f2b3d", "#414b5a", "#667085", "#8a95a5", "#b9c2cf", "#e6ebf2", "#f3f6fb"] },
+      "outline": { "role": "neutral", "displayName": "Outline Grey", "canonical": "#667085", "dark": "#8a95a5", "tonalRamp": ["#0f1a2a", "#414b5a", "#667085", "#8a95a5", "#b9c2cf", "#cfd6e1", "#e2e9f3", "#f3f6fb"] },
+      "error": { "role": "error", "displayName": "Alert Red", "canonical": "#ba1a1a", "dark": "#ffb4ab", "tonalRamp": ["#410002", "#690005", "#93000a", "#ba1a1a", "#de3730", "#ff897d", "#ffdad6", "#fff8f7"] }
+    },
+    "typographyMeta": {
+      "headline-xl": { "displayName": "Large title", "purpose": "Primary screen title in the top bar, navy." },
+      "headline-md": { "displayName": "Screen title", "purpose": "Standard top bar title, ink." },
+      "title": { "displayName": "Row title", "purpose": "Chat names and dashboard row labels; 700 when unread." },
+      "body": { "displayName": "Body", "purpose": "General text and key-value rows." },
+      "secondary": { "displayName": "Secondary", "purpose": "Last message and chip labels." },
+      "label": { "displayName": "Label", "purpose": "Timestamps, status line, tab labels." }
+    },
+    "shadows": [
+      { "name": "fab", "value": "offset 0/4, opacity 0.4, radius 12, elevation 8 (shadowColor #000)", "purpose": "Navy FAB floating above the list." },
+      { "name": "speed-dial", "value": "offset 0/2, opacity 0.15, radius 4, elevation 4 (shadowColor #000)", "purpose": "Mini buttons in the FAB speed dial." }
+    ],
+    "motion": [
+      { "name": "tab-indicator-spring", "value": "withSpring damping 22, stiffness 260, mass 0.7", "purpose": "Tab pill follows tap; jumps instantly under reduced motion; tracks swipe position directly." },
+      { "name": "press-ios", "value": "opacity 0.6", "purpose": "Row press state on iPhone (Android uses a foreground ripple)." },
+      { "name": "press-android-ripple", "value": "rgba(0,50,107,0.08) light, rgba(255,255,255,0.08) dark", "purpose": "Row press feedback on Android." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Search Pill",
+      "kind": "input",
+      "refersTo": "search-pill",
+      "description": "48px pill search with leading icon and trailing filter button.",
+      "html": "<div class=\"ds-search\"><span class=\"ds-search-icon\">&#9906;</span><span class=\"ds-search-ph\">Search chats</span></div>",
+      "css": ".ds-search { display: flex; align-items: center; height: 48px; padding: 0 6px 0 16px; border-radius: 24px; background: #f3f6fb; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 16px; color: #667085; gap: 10px; width: 320px; } .ds-search-icon { font-size: 18px; color: #667085; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "filter-chip",
+      "description": "36px pill; tinted navy when selected.",
+      "html": "<div style=\"display:flex;gap:8px\"><button class=\"ds-chip\">All</button><button class=\"ds-chip ds-chip-on\">Unread 4</button></div>",
+      "css": ".ds-chip { height: 36px; padding: 0 14px; border: none; border-radius: 18px; background: #f3f6fb; color: #414b5a; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; } .ds-chip-on { background: #e4ecfa; color: #00326b; font-weight: 700; } .ds-chip:focus-visible { outline: 2px solid #00326b; outline-offset: 2px; } .ds-chip:active { opacity: 0.6; }"
+    },
+    {
+      "name": "Chat Row (unread)",
+      "kind": "custom",
+      "refersTo": "chat-row",
+      "description": "72px row: 52px avatar, name and time, last message, green unread badge, inset hairline.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-avatar\">A</div><div class=\"ds-row-body\"><div class=\"ds-row-top\"><span class=\"ds-name\">Aisha Khan</span><span class=\"ds-time\">09:41</span></div><div class=\"ds-row-bottom\"><span class=\"ds-msg\">Can I change the delivery address?</span><span class=\"ds-badge\">3</span></div></div></div>",
+      "css": ".ds-row { display: flex; align-items: center; min-height: 72px; padding-left: 16px; background: #fff; font-family: 'Plus Jakarta Sans', sans-serif; width: 360px; } .ds-avatar { width: 52px; height: 52px; border-radius: 26px; margin-right: 12px; flex-shrink: 0; background: #e4ecfa; color: #00326b; font-weight: 700; font-size: 19px; display: flex; align-items: center; justify-content: center; } .ds-row-body { flex: 1; min-width: 0; padding: 10px 16px 10px 0; border-bottom: 1px solid rgba(15,26,42,0.08); } .ds-row-top, .ds-row-bottom { display: flex; align-items: center; justify-content: space-between; } .ds-name { font-size: 16.5px; line-height: 22px; font-weight: 700; color: #0f1a2a; } .ds-time { font-size: 12px; font-weight: 700; color: #0b7a3e; margin-left: 8px; } .ds-msg { font-size: 14px; line-height: 20px; font-weight: 500; color: #0f1a2a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-badge { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: #0e8344; color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; } .ds-row:active { opacity: 0.6; }"
+    },
+    {
+      "name": "Bottom Tab Bar",
+      "kind": "nav",
+      "refersTo": "tab-bar",
+      "description": "Material 3 bar: tinted pill behind selected icon, label below.",
+      "html": "<nav class=\"ds-tabs\"><div class=\"ds-tab ds-tab-on\"><span class=\"ds-pill\">&#9679;</span><span class=\"ds-tab-l\">Chats</span></div><div class=\"ds-tab\"><span class=\"ds-pill\">&#9679;</span><span class=\"ds-tab-l\">Contacts</span></div><div class=\"ds-tab\"><span class=\"ds-pill\">&#9679;</span><span class=\"ds-tab-l\">Dashboard</span></div><div class=\"ds-tab\"><span class=\"ds-pill\">&#9679;</span><span class=\"ds-tab-l\">Profile</span></div></nav>",
+      "css": ".ds-tabs { display: flex; height: 68px; width: 360px; background: #fff; border-top: 1px solid rgba(15,26,42,0.08); font-family: 'Plus Jakarta Sans', sans-serif; } .ds-tab { flex: 1; display: flex; flex-direction: column; align-items: center; padding-top: 9px; color: #667085; cursor: pointer; } .ds-pill { width: 60px; height: 32px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 14px; } .ds-tab-l { font-size: 12px; line-height: 16px; margin-top: 3px; font-weight: 500; } .ds-tab-on { color: #0f1a2a; } .ds-tab-on .ds-pill { background: #e4ecfa; color: #00326b; } .ds-tab-on .ds-tab-l { font-weight: 700; } .ds-tab:focus-visible { outline: 2px solid #00326b; }"
+    },
+    {
+      "name": "FAB",
+      "kind": "button",
+      "refersTo": "fab",
+      "description": "Navy rounded-square primary action floating above the list.",
+      "html": "<button class=\"ds-fab\" aria-label=\"New\">+</button>",
+      "css": ".ds-fab { width: 56px; height: 56px; border: none; border-radius: 18px; background: #00326b; color: #fff; font-size: 28px; line-height: 1; box-shadow: 0 4px 12px rgba(0,0,0,0.4); cursor: pointer; } .ds-fab:active { opacity: 0.85; } .ds-fab:focus-visible { outline: 2px solid #00326b; outline-offset: 3px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Tonal well, no border, no shadow; use sparingly.",
+      "html": "<div class=\"ds-card\">Quiet grouped content</div>",
+      "css": ".ds-card { background: #f3f6fb; border-radius: 16px; padding: 16px; color: #0f1a2a; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 15px; width: 320px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Category Standard, Played Straight",
+    "overview": "SAC Mobile is a white messaging inbox finished to the level of the apps its users already know: WhatsApp Business, Telegram, a Zoho or Intercom team inbox, Google Messages. Agents and owners use it one-handed, in short bursts, often in daylight, so the system chooses familiarity and legibility over novelty. The ground is white; neutrals are tinted toward navy; navy carries brand, titles and primary actions; green appears only for unread and success.\n\nThe system rejects the earlier pale-blue card-on-card dashboard look and decorative borders. Structure comes from spacing, tonal wells and a single inset hairline. Plus Jakarta Sans is the only typeface, on one type scale.\n\nThe conversation screen is outside this system and keeps its WhatsApp-like look.",
+    "keyCharacteristics": [
+      "White ground, navy-tinted wells (surface-well) instead of cards and borders.",
+      "Navy for brand and action, green only for unread and success.",
+      "Round avatars, pill search, pill filter chips, Material 3 bottom bar with a tinted pill indicator.",
+      "Rows over cards: lists are hairline-divided rows, not boxed tiles.",
+      "Light and dark themes share one token set (dark values in the sidecar)."
+    ],
+    "rules": [
+      { "name": "The Green Is a Signal Rule", "body": "Green means unread or success and nothing else. A chat that does not need a reply never shows green.", "section": "colors" },
+      { "name": "The Navy Acts Rule", "body": "Navy marks identity and the thing you can do next (titles, FAB, selected state). Decoration never uses it.", "section": "colors" },
+      { "name": "The Theme Token Rule", "body": "Colour comes from colors.* so dark mode follows. A literal hex in a screen is drift.", "section": "colors" },
+      { "name": "The Weight Carries State Rule", "body": "Unread is shown by weight and colour together. Do not add size changes.", "section": "typography" },
+      { "name": "The Flat Rows Rule", "body": "Rows, search, chips and the tab bar carry no shadow. Only controls that float above the list may.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do read colours from useThemeStore().colors and render text through src/components/ui/Text.tsx.",
+      "Do reserve green for unread and success, and navy for brand and primary action.",
+      "Do build lists as hairline-divided rows with the divider inset from the avatar.",
+      "Do keep touch targets at least 36px tall (chips, filter button) and rows 64px or more.",
+      "Do give dark mode the same structure with DARK_COLORS; verify both themes on a device.",
+      "Do leave the chat conversation screen alone; it keeps its WhatsApp-like look."
+    ],
+    "donts": [
+      "Don't return to pale-blue card-on-card dashboards or boxed groups for lists.",
+      "Don't add decorative borders or shadows to rows, chips, search or the tab bar.",
+      "Don't use green for anything that is not unread or success.",
+      "Don't introduce a second typeface or a weight outside 400, 500, 600, 700 (800 collapses to 700).",
+      "Don't hard-code hex values in screens; add a token instead."
+    ]
+  }
+}

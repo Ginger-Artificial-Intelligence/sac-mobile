@@ -194,16 +194,21 @@ export const getInteractivePayload = (msg: any): any => {
   return msg?.interactive || directMessageInteractive || input?.interactive || content?.interactive || content?.message?.interactive || content?.message_input?.interactive || content?.payload?.interactive || (typeof content?.content === 'object' ? content.content?.interactive : undefined) || content || {}
 }
 
+// The top-level `contacts` on a stored message is the sender's profile ({ wa_user_id, name }), not a card
+const isSenderProfile = (value: any): boolean =>
+  Boolean(value?.wa_user_id) && !value?.phones && !value?.phone_numbers && !value?.phoneNumbers && !value?.emails && !value?.addresses
+
 export const getContactsPayload = (msg: any): any[] => {
   const message = getMessagePayload(msg)
   const content = getContentPayload(msg)
   const input = getMessageInputPayload(msg)
   const media = getMediaPayload(msg)
+  // The message's own contact cards come first, ahead of the sender profile at the top level
   const candidates = [
-    msg?.contacts,
-    msg?.contact,
     message?.contacts,
     message?.contact,
+    msg?.contacts,
+    msg?.contact,
     content?.contacts,
     content?.contact,
     content?.message?.contacts,
@@ -221,7 +226,7 @@ export const getContactsPayload = (msg: any): any[] => {
   for (const candidate of candidates) {
     const parsed = parseMaybeJson(candidate)
     if (Array.isArray(parsed) && parsed.length) return parsed
-    if (parsed && typeof parsed === 'object') return [parsed]
+    if (parsed && typeof parsed === 'object' && !isSenderProfile(parsed)) return [parsed]
   }
 
   if (Array.isArray(media)) return media

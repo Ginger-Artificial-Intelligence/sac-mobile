@@ -294,11 +294,7 @@ export const ChatInput = React.memo(({
 
   return (
     <View
-      style={{
-        backgroundColor: isDark ? "#0b121c" : "#ffffff",
-        borderTopColor: colors.divider,
-        borderTopWidth: 1,
-      }}
+      style={{ backgroundColor: "transparent" }}
       className="flex-col shrink-0 z-20"
     >
       {/* Backdrop overlay to dismiss sheet on tapping messages list */}
@@ -414,28 +410,37 @@ export const ChatInput = React.memo(({
           }}
         />
       ) : (
-        <View className="px-2 py-2 flex-row items-end gap-2 z-10" style={{ paddingBottom: rowBottomPadding }}>
+        <View className="flex-row items-end z-10" style={{ paddingHorizontal: 6, paddingTop: 6, gap: 6, paddingBottom: rowBottomPadding }}>
           <View
             style={{
-              backgroundColor: colors.surfaceContainerLowest,
-              borderColor: colors.divider,
-              borderWidth: 1,
+              backgroundColor: colors.chatComposer,
+              borderRadius: 25,
+              minHeight: 50,
+              paddingHorizontal: 4,
             }}
-            className="flex-1 rounded-[22px] flex-row items-center px-2 py-1 min-h-[44px]"
+            className="flex-1 flex-row items-end"
           >
-            <Pressable onPress={handleEmojiIconPress} className="p-2 rounded-full active:opacity-70">
-              <Icon name={emojiIconName} size={24} color={colors.outline} />
+            <Pressable onPress={handleEmojiIconPress} className="rounded-full active:opacity-70" style={{ width: 44, height: 50, alignItems: "center", justifyContent: "center" }}>
+              <Icon name={emojiIconName} size={25} color={isDark ? "#8696a0" : "#54656f"} />
             </Pressable>
+            <View style={{ flex: 1, justifyContent: "center", minHeight: 50 }}>
+            {/* The native placeholder ignores the app font on some Samsung phones, so it is drawn as Text */}
+            {text.length === 0 && (
+              <Text pointerEvents="none" numberOfLines={1} style={{ position: "absolute", left: 4, right: 0, fontSize: 17, color: isDark ? "#8696a0" : "#667781" }}>
+                {composerLocked ? "24-hour window closed" : "Message"}
+              </Text>
+            )}
             <TextInput
               ref={inputRef}
               style={{
                 maxHeight: 120,
                 color: colors.onSurface,
-                fontSize: 15,
+                fontSize: 17,
+                fontFamily: "PlusJakartaSans_400Regular",
+                paddingVertical: 12,
+                paddingHorizontal: 4,
               }}
-              className="flex-1 bg-transparent py-2 px-1 font-body-md"
-              placeholder={composerLocked ? "24-hour window closed" : "Message"}
-              placeholderTextColor={colors.outline}
+              accessibilityLabel={composerLocked ? "24-hour window closed" : "Message"}
               editable={!composerLocked}
               maxLength={isInstagram ? 1000 : undefined}
               multiline
@@ -443,28 +448,34 @@ export const ChatInput = React.memo(({
               onChangeText={setText}
               onFocus={() => setSheetVisible(false)}
             />
-            <Pressable onPress={handleToggleMediaSheet} className="p-2 rounded-full active:opacity-70">
-              <Icon name="attach-file" size={24} color={colors.outline} />
+            </View>
+            <Pressable onPress={handleToggleMediaSheet} className="rounded-full active:opacity-70" style={{ width: 42, height: 50, alignItems: "center", justifyContent: "center" }}>
+              <Icon name="attach-file" size={24} color={isDark ? "#8696a0" : "#54656f"} style={{ transform: [{ rotate: "-45deg" }] }} />
             </Pressable>
             {text.trim().length === 0 && (
-              <Pressable onPress={handleCamera} className="p-2 rounded-full active:opacity-70" style={{ opacity: mediaLocked ? 0.4 : 1 }}>
-                <Icon name="photo-camera" size={24} color={colors.outline} />
+              <Pressable onPress={handleCamera} className="rounded-full active:opacity-70" style={{ width: 44, height: 50, alignItems: "center", justifyContent: "center", opacity: mediaLocked ? 0.4 : 1 }}>
+                <Icon name="photo-camera" size={24} color={isDark ? "#8696a0" : "#54656f"} />
               </Pressable>
             )}
           </View>
 
           <Pressable
             onPress={text.trim().length > 0 ? handleSend : startVoice}
+            accessibilityLabel={text.trim().length > 0 ? "Send" : "Record voice message"}
             style={{
-              backgroundColor: colors.primary,
+              width: 50,
+              height: 50,
+              borderRadius: 25,
+              backgroundColor: colors.chatAccent,
               opacity: (text.trim().length > 0 ? composerLocked : mediaLocked) ? 0.4 : 1,
+              elevation: 2,
             }}
-            className="w-11 h-11 rounded-full items-center justify-center shadow-md active:opacity-80"
+            className="items-center justify-center active:opacity-80"
           >
             <Icon
               name={text.trim().length > 0 ? "send" : "mic"}
               size={24}
-              color={colors.onPrimary}
+              color={colors.onChatAccent}
             />
           </Pressable>
         </View>

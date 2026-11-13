@@ -31,15 +31,35 @@ interface TemplatesModalProps {
   onSuccess: (newMessage: any) => void;
 }
 
-const extractPlaceholders = (text?: string): number[] => {
+// Variables in a template: numbered ({{1}}) or named ({{name}}, when the template uses named
+// parameters). Numbered ones come back in number order, named ones in the order they appear.
+const extractPlaceholders = (text?: string): string[] => {
   if (!text) return [];
-  const regex = /\{\{(\d+)\}\}/g;
-  const matches: number[] = [];
+  const regex = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*|\d+)\s*\}\}/g;
+  const found: string[] = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
-    matches.push(parseInt(match[1], 10));
+    if (!found.includes(match[1])) found.push(match[1]);
   }
-  return Array.from(new Set(matches)).sort((a, b) => a - b);
+  const numbered = found.filter((k) => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+  const named = found.filter((k) => !/^\d+$/.test(k));
+  return [...numbered, ...named];
+};
+
+const isNamed = (key: string) => !/^\d+$/.test(key);
+
+// One sent parameter: named variables carry their name, as Meta requires for named templates
+const textParam = (key: string, value: string) => ({ type: "text", text: value, ...(isNamed(key) ? { parameter_name: key } : {}) });
+
+// The example value Meta stores for a variable, shown as the input's hint
+const exampleFor = (comp: any, key: string, part: "header" | "body"): string | undefined => {
+  if (!comp?.example) return undefined;
+  if (isNamed(key)) {
+    const named = part === "header" ? comp.example.header_text_named_params : comp.example.body_text_named_params;
+    return (named || []).find((n: any) => n?.param_name === key)?.example;
+  }
+  const i = Number(key) - 1;
+  return part === "header" ? comp.example.header_text?.[i] : comp.example.body_text?.[0]?.[i];
 };
 
 export const TemplatesModal = React.memo(({
@@ -71,8 +91,8 @@ export const TemplatesModal = React.memo(({
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [localFileUri, setLocalFileUri] = useState("");
 
-  const [headerVarValues, setHeaderVarValues] = useState<Record<number, string>>({});
-  const [bodyVarValues, setBodyVarValues] = useState<Record<number, string>>({});
+  const [headerVarValues, setHeaderVarValues] = useState<Record<string, string>>({});
+  const [bodyVarValues, setBodyVarValues] = useState<Record<string, string>>({});
   const [urlButtonVarValue, setUrlButtonVarValue] = useState("");
 
   // Location fields
@@ -205,14 +225,14 @@ export const TemplatesModal = React.memo(({
 
     if (headerComp && headerComp.format === "TEXT") {
       const headerIndexes = extractPlaceholders(headerComp.text);
-      const initVals: Record<number, string> = {};
+      const initVals: Record<string, string> = {};
       headerIndexes.forEach(idx => { initVals[idx] = ""; });
       setHeaderVarValues(initVals);
     }
 
     if (bodyComp) {
       const bodyIndexes = extractPlaceholders(bodyComp.text);
-      const initVals: Record<number, string> = {};
+      const initVals: Record<string, string> = {};
       bodyIndexes.forEach(idx => { initVals[idx] = ""; });
       setBodyVarValues(initVals);
     }
@@ -357,10 +377,7 @@ export const TemplatesModal = React.memo(({
         if (indexes.length > 0) {
           componentsPayload.push({
             type: "header",
-            parameters: indexes.map(idx => ({
-              type: "text",
-              text: headerVarValues[idx] || ""
-            }))
+            parameters: indexes.map(idx => textParam(idx, headerVarValues[idx] || ""))
           });
         }
       } else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(headerComp.format)) {
@@ -395,10 +412,7 @@ export const TemplatesModal = React.memo(({
       if (indexes.length > 0) {
         componentsPayload.push({
           type: "body",
-          parameters: indexes.map(idx => ({
-            type: "text",
-            text: bodyVarValues[idx] || ""
-          }))
+          parameters: indexes.map(idx => textParam(idx, bodyVarValues[idx] || ""))
         });
       }
     }
@@ -787,7 +801,7 @@ export const TemplatesModal = React.memo(({
                         label={`Header {{${idx}}}`}
                         value={headerVarValues[idx] || ""}
                         onChange={(t) => setHeaderVarValues((prev) => ({ ...prev, [idx]: t }))}
-                        placeholder={headerComp?.example?.header_text?.[idx - 1] ? `e.g. ${headerComp.example.header_text[idx - 1]}` : undefined}
+                        placeholder={exampleFor(headerComp, idx, "header") ? `e.g. ${exampleFor(headerComp, idx, "header")}` : undefined}
                       />
                     ))}
 
@@ -797,7 +811,7 @@ export const TemplatesModal = React.memo(({
                         label={`Body {{${idx}}}`}
                         value={bodyVarValues[idx] || ""}
                         onChange={(t) => setBodyVarValues((prev) => ({ ...prev, [idx]: t }))}
-                        placeholder={bodyComp?.example?.body_text?.[0]?.[idx - 1] ? `e.g. ${bodyComp.example.body_text[0][idx - 1]}` : undefined}
+                        placeholder={exampleFor(bodyComp, idx, "body") ? `e.g. ${exampleFor(bodyComp, idx, "body")}` : undefined}
                       />
                     ))}
 
@@ -856,11 +870,11 @@ const BUTTON_ICONS: Record<string, string> = {
   OTP: "content-copy",
 };
 
-function withVariables(text: string, values: Record<number, string>, primary: string) {
-  return text.split(/(\{\{\d+\}\})/g).map((part, i) => {
-    const m = part.match(/^\{\{(\d+)\}\}$/);
+function withVariables(text: string, values: Record<string, string>, primary: string) {
+  return text.split(/(\{\{\s*[A-Za-z0-9_]+\s*\}\})/g).map((part, i) => {
+    const m = part.match(/^\{\{\s*([A-Za-z0-9_]+)\s*\}\}$/);
     if (!m) return part;
-    const value = values[Number(m[1])];
+    const value = values[m[1]];
     if (value && value.trim()) return value;
     return (
       <Text key={i} style={{ color: primary, fontWeight: "700" }}>
@@ -882,8 +896,8 @@ function TemplateBubble({
   colors,
 }: {
   template: any;
-  headerVars: Record<number, string>;
-  bodyVars: Record<number, string>;
+  headerVars: Record<string, string>;
+  bodyVars: Record<string, string>;
   localFileUri?: string;
   uploadedFileName?: string;
   location?: { name: string; address: string; hasCoords: boolean };

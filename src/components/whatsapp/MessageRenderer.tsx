@@ -23,11 +23,23 @@ import { AccountPickerModal } from "../contacts/AccountPickerModal";
 /** The chat screen provides this: scrolls to (and highlights) the message a reply quotes */
 export const ReplyJumpContext = React.createContext<(replyTo: any) => void>(() => {});
 
-const Bubble = React.memo(({ message, children, wide = false, outside }: { message: NormalizedChatMessage; children: React.ReactNode; wide?: boolean; outside?: React.ReactNode }) => {
+// Text bubbles put the time inside the last line (WhatsApp style): the text ends with an invisible copy
+// of the time so it wraps to make room, and the real time sits on top of it at the bottom right.
+const metaSpacer = (message: NormalizedChatMessage) => {
+  const name = message.isOutgoing && message.senderName ? `${String(message.senderName).slice(0, 18)} • ` : "";
+  const time = message.createdAt ? formatMessageTime(message.createdAt) : "";
+  // Non-breaking spaces: Android drops ordinary spaces at the end of a line, which would make it too short
+  // (a space is narrow in this font, so the tick icon and gaps need a good run of them)
+  return `     ${name}${time}${message.isOutgoing ? "             " : ""}`.replace(/ /g, " ");
+};
+
+const Bubble = React.memo(({ message, children, wide = false, outside, inlineMeta = false }: { message: NormalizedChatMessage; children: React.ReactNode; wide?: boolean; outside?: React.ReactNode; inlineMeta?: boolean }) => {
   const isMe = message.isOutgoing;
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
   const formattedTime = message.createdAt ? formatMessageTime(message.createdAt) : "";
+  const firstInRun = (message as any).firstInRun !== false;
+  const bubbleColor = isMe ? colors.bubbleOut : colors.bubbleIn;
 
   const getStatusIconName = () => {
     const raw = (message as any).status;
@@ -45,46 +57,69 @@ const Bubble = React.memo(({ message, children, wide = false, outside }: { messa
 
   const getStatusIconColor = () => {
     const raw = (message as any).status;
-    if (raw === 3 || raw === "3" || String(raw).toLowerCase() === "read") return isDark ? "#53bdeb" : "#00326b";
+    if (raw === 3 || raw === "3" || String(raw).toLowerCase() === "read") return "#53bdeb";
     if (raw === 4 || raw === "4" || String(raw).toLowerCase() === "failed") return "#e53935";
-    return isMe ? (isDark ? "rgba(255,255,255,0.7)" : "#737782") : colors.outline;
+    return isDark ? "rgba(255,255,255,0.6)" : "#667781";
   };
 
   return (
-    <View className={cn("flex-row px-4 py-1", isMe ? "justify-end" : "justify-start")}>
+    <View
+      className={cn("flex-row", isMe ? "justify-end" : "justify-start")}
+      style={{ paddingLeft: 14, paddingRight: 14, paddingTop: firstInRun ? 6 : 1, paddingBottom: 1 }}
+    >
       <View className={cn(wide || (message as any).message?.referral ? "max-w-[88%]" : "max-w-[80%]", isMe ? "items-end" : "items-start")}>
       <View
         style={{
-          backgroundColor: isMe
-            ? (isDark ? "#005c4b" : "#d9fdd3")
-            : (isDark ? "#121d2b" : "#ffffff"),
-          borderColor: isMe
-            ? (isDark ? "rgba(0, 92, 75, 0.6)" : "rgba(193, 232, 186, 0.6)")
-            : (isDark ? colors.divider : "rgba(0, 50, 107, 0.08)"),
-          borderWidth: 1,
+          backgroundColor: bubbleColor,
+          borderRadius: 8,
+          borderTopRightRadius: isMe && firstInRun ? 0 : 8,
+          borderTopLeftRadius: !isMe && firstInRun ? 0 : 8,
+          paddingHorizontal: 8,
+          paddingTop: 6,
+          paddingBottom: inlineMeta ? 7 : 5,
+          elevation: 1,
+          shadowColor: "#000",
+          shadowOpacity: isDark ? 0 : 0.12,
+          shadowRadius: 0.5,
+          shadowOffset: { width: 0, height: 1 },
         }}
-        className={cn(
-          "rounded-2xl px-3 py-2 shadow-xs relative",
-          isMe ? "rounded-tr-sm" : "rounded-tl-sm"
-        )}
       >
+        {/* The tail on the first bubble of a run, like WhatsApp */}
+        {firstInRun && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 0,
+              [isMe ? "right" : "left"]: -8,
+              width: 0,
+              height: 0,
+              borderTopWidth: 10,
+              borderTopColor: bubbleColor,
+              [isMe ? "borderRightWidth" : "borderLeftWidth"]: 9,
+              [isMe ? "borderRightColor" : "borderLeftColor"]: "transparent",
+            }}
+          />
+        )}
         <ForwardedLabel message={message} />
         <ReplyPreview message={message} />
         <AdReferralCard message={message} />
         {children}
-        <View className="flex-row justify-end items-center gap-1 mt-1">
+        <View
+          className="flex-row justify-end items-center gap-1"
+          style={inlineMeta ? { position: "absolute", right: 8, bottom: 5 } : { marginTop: 3 }}
+        >
           {(message as any).pinned === true && <Icon name="push-pin" size={11} color={colors.outline} />}
           {isMe && message.senderName && (
             <Text
-              style={{ color: isDark ? "rgba(255,255,255,0.7)" : "#5f6368", fontSize: 10.5 }}
-              className="max-w-[100px]"
+              style={{ color: isDark ? "rgba(255,255,255,0.6)" : "#667781", fontSize: 11 }}
               numberOfLines={1}
             >
-              {message.senderName} •
+              {String(message.senderName).slice(0, 18)} •
             </Text>
           )}
           <Text
-            style={{ color: isMe ? (isDark ? "rgba(255,255,255,0.7)" : "#5f6368") : colors.outline, fontSize: 10.5 }}
+            style={{ color: isDark ? "rgba(255,255,255,0.6)" : "#667781", fontSize: 11 }}
           >
             {formattedTime}
           </Text>
@@ -162,15 +197,13 @@ const ReactionPill = React.memo(({ reactions, isMe }: { reactions?: { emoji: str
 const URL_RX = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/i;
 const PHONE_RX = /^\+?[0-9][0-9\s().\-]{6,}[0-9]$/;
 
-const RichText = React.memo(({ text, muted, isOutgoing }: { text: unknown; muted?: boolean; isOutgoing?: boolean }) => {
+const RichText = React.memo(({ text, muted, isOutgoing, trailing }: { text: unknown; muted?: boolean; isOutgoing?: boolean; trailing?: string }) => {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = useThemeStore((state) => state.colors);
   const normalized = String(text ?? "").replace(/\\n/g, "\n");
   if (!normalized) return null;
 
-  const defaultColor = isOutgoing
-    ? (isDark ? "#ffffff" : "#0b1c30")
-    : colors.onSurface;
+  const defaultColor = isDark ? "#e9edef" : "#111b21";
 
   const mutedColor = isOutgoing
     ? (isDark ? "rgba(255,255,255,0.75)" : "#5f6368")
@@ -216,12 +249,13 @@ const RichText = React.memo(({ text, muted, isOutgoing }: { text: unknown; muted
     <Text
       style={{
         color: muted ? mutedColor : defaultColor,
-        fontSize: muted ? 12.5 : 14.5,
+        fontSize: muted ? 12.5 : 15,
         lineHeight: muted ? 18 : 21,
       }}
       selectable
     >
       {nodes}
+      {trailing ? <Text style={{ fontSize: 11, color: isOutgoing ? colors.bubbleOut : colors.bubbleIn }}>{trailing}</Text> : null}
     </Text>
   );
 });
@@ -239,17 +273,23 @@ const ReplyPreview = React.memo(({ message }: { message: NormalizedChatMessage }
   if (!sender && !content) return null;
 
   return (
+    // WhatsApp quote: a rounded box with a straight colour bar down its left edge
     <Pressable
       onPress={() => jump(replyTo)}
       style={{
-        backgroundColor: isDark ? "rgba(0, 0, 0, 0.3)" : "rgba(0, 50, 107, 0.05)",
-        borderLeftColor: colors.primary,
-        borderLeftWidth: 3,
+        flexDirection: "row",
+        backgroundColor: isDark ? "rgba(0,0,0,0.22)" : "rgba(0,0,0,0.05)",
+        borderRadius: 7,
+        overflow: "hidden",
+        marginBottom: 4,
+        minWidth: 160,
       }}
-      className="mb-1.5 rounded-lg overflow-hidden px-2 py-1.5"
     >
-      {sender ? <Text style={{ color: colors.primary, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>{sender}</Text> : null}
-      {content ? <Text style={{ color: colors.outline, fontSize: 11 }} numberOfLines={2}>{content}</Text> : null}
+      <View style={{ width: 4, backgroundColor: isDark ? "#a5b3ff" : "#7b6ae0" }} />
+      <View style={{ flex: 1, paddingHorizontal: 8, paddingVertical: 6 }}>
+        {sender ? <Text style={{ color: isDark ? "#a5b3ff" : "#5b4ec7", fontSize: 13, fontWeight: "700" }} numberOfLines={1}>{sender}</Text> : null}
+        {content ? <Text style={{ color: isDark ? "rgba(255,255,255,0.65)" : "#667781", fontSize: 13, marginTop: 1 }} numberOfLines={2}>{content}</Text> : null}
+      </View>
     </Pressable>
   );
 });
@@ -286,8 +326,8 @@ const ActionChip = React.memo(({ label, href }: { label: string; href?: string }
 });
 
 const TextMessage = React.memo(({ message }: { message: NormalizedChatMessage }) => (
-  <Bubble message={message}>
-    <RichText text={message.content || "[text message]"} isOutgoing={message.isOutgoing} />
+  <Bubble message={message} inlineMeta>
+    <RichText text={message.content || "[text message]"} isOutgoing={message.isOutgoing} trailing={metaSpacer(message)} />
   </Bubble>
 ));
 
@@ -661,52 +701,48 @@ const NativeAudioMessage = React.memo(({ message }: { message: NormalizedChatMes
   };
 
   return (
-    <Bubble message={message} wide>
-      <View
-        style={{
-          backgroundColor: isDark ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.7)",
-          borderColor: colors.divider,
-          borderWidth: 1,
-        }}
-        className="flex-row items-center gap-3 rounded-xl p-3 min-w-[240px]"
-      >
+    <Bubble message={message} wide inlineMeta>
+      {/* WhatsApp voice note: play button, progress track with a knob, time under it, mic mark at the end */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minWidth: 250, paddingBottom: 14 }}>
         <Pressable
           onPress={handleAudioPress}
           disabled={media.loading}
-          style={{ backgroundColor: colors.primary }}
-          className="w-10 h-10 rounded-full items-center justify-center active:opacity-80"
+          accessibilityLabel={status.playing ? "Pause voice message" : "Play voice message"}
+          hitSlop={8}
+          style={{ width: 40, height: 44, alignItems: "center", justifyContent: "center" }}
         >
           {media.loading || status.isBuffering ? (
-            <ActivityIndicator size="small" color={colors.onPrimary} />
+            <ActivityIndicator size="small" color={isDark ? "#8696a0" : "#54656f"} />
           ) : !media.url ? (
-            <Icon name="refresh" size={20} color={colors.onPrimary} />
+            <Icon name="download" size={28} color={isDark ? "#8696a0" : "#54656f"} />
           ) : (
-            <Icon name={status.playing ? "pause" : "play-arrow"} size={22} color={colors.onPrimary} />
+            <Icon name={status.playing ? "pause" : "play-arrow"} size={36} color={isDark ? "#8696a0" : "#54656f"} />
           )}
         </Pressable>
-        <View className="flex-1">
+        <View style={{ flex: 1, justifyContent: "center", height: 44 }}>
+          <View style={{ height: 3, borderRadius: 2, backgroundColor: isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.15)" }}>
+            <View style={{ width: `${pct}%`, height: "100%", borderRadius: 2, backgroundColor: colors.chatAccent }} />
+          </View>
           <View
-            style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.1)" }}
-            className="h-1 rounded-full overflow-hidden"
-          >
-            <View
-              style={{ width: `${pct}%`, backgroundColor: colors.primary }}
-              className="h-full"
-            />
-          </View>
-          <View className="flex-row justify-between mt-1">
-            <Text style={{ fontSize: 10, color: colors.outline }}>{media.url ? fmt(cur) : "Tap to load"}</Text>
-            <Text style={{ fontSize: 10, color: colors.outline }}>{dur > 0 ? fmt(dur) : "--:--"}</Text>
-          </View>
-          {media.error && <Text className="text-[10px] text-red-500 font-semibold mt-1">Audio expired or unavailable</Text>}
+            style={{
+              position: "absolute",
+              left: `${pct}%`,
+              marginLeft: -6,
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: status.playing || pct > 0 ? colors.chatAccent : "#53bdeb",
+            }}
+          />
+          <Text style={{ position: "absolute", bottom: -12, left: 0, fontSize: 11, color: isDark ? "rgba(255,255,255,0.6)" : "#667781" }}>
+            {status.playing || cur > 0 ? fmt(cur) : dur > 0 ? fmt(dur) : media.url ? "0:00" : "Tap to load"}
+          </Text>
         </View>
-        <View
-          style={{ backgroundColor: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)" }}
-          className="w-8 h-8 rounded-full items-center justify-center"
-        >
-          <Icon name="mic" size={16} color={colors.outline} />
+        <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: message.isOutgoing ? colors.chatAccent : (isDark ? "#374248" : "#dfe5e7") }}>
+          <Icon name="mic" size={22} color={message.isOutgoing ? colors.onChatAccent : (isDark ? "#e9edef" : "#54656f")} />
         </View>
       </View>
+      {media.error && <Text style={{ fontSize: 11, color: colors.error, marginTop: 2 }}>Audio expired or unavailable</Text>}
     </Bubble>
   );
 });
@@ -1134,23 +1170,10 @@ const TemplateButtonRows = React.memo(({ buttons, flat = false }: { buttons: Rec
   );
 });
 
-const TemplateBody = ({ text, isOutgoing }: { text: string; isOutgoing: boolean }) => {
-  const colors = useThemeStore((state) => state.colors);
-  const [expanded, setExpanded] = useState(false);
-  const collapsible = text.length > 280 || text.split(/\r?\n/).length > 6;
-  return (
-    <View>
-      <View style={!expanded && collapsible ? { maxHeight: 118, overflow: "hidden" } : undefined}>
-        <RichText text={text} isOutgoing={isOutgoing} />
-      </View>
-      {collapsible ? (
-        <Pressable onPress={() => setExpanded((v) => !v)} hitSlop={6}>
-          <Text style={{ color: colors.primary, fontSize: 13, fontWeight: "600", marginTop: 2 }}>{expanded ? "Show less" : "Read more"}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-};
+// Templates are shown in full (no "Read more"), with every variable filled in from the values sent
+const TemplateBody = ({ text, isOutgoing }: { text: string; isOutgoing: boolean }) => (
+  <RichText text={text} isOutgoing={isOutgoing} />
+);
 
 const TemplateCarousel = React.memo(({ message, cards }: { message: NormalizedChatMessage; cards: TemplateCardView[] }) => {
   const isDark = useThemeStore((state) => state.isDark);

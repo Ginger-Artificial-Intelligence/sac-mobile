@@ -228,3 +228,16 @@ describe('mapApiMessage', () => {
     assert.equal(mapApiMessage({ _id: '1', timestamp: 1700000000000 }, 'c').timestamp, '2023-11-14T22:13:20.000Z');
   });
 });
+
+import { getContactsPayload } from '../src/lib/messageUtils.ts';
+
+test('a shared contact card is read from the message, not the sender profile at the top level', () => {
+  const stored = {
+    contacts: { name: 'ali-d-coded', wa_user_id: '919072283042' },
+    message: { type: 'contacts', contacts: [{ name: { formatted_name: 'Abdul Salam' }, phones: [{ phone: '+91 98959 59576', type: 'MOBILE' }] }] },
+  };
+  const cards = getContactsPayload(stored);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].name.formatted_name, 'Abdul Salam');
+  assert.deepEqual(getContactsPayload({ contacts: { name: 'x', wa_user_id: '1' }, message: {} }), []);
+});

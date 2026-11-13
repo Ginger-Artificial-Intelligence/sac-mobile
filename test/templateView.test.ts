@@ -33,3 +33,17 @@ test("without a definition the saved header image and body text are used", () =>
   assert.deepEqual(view.header, { type: "IMAGE", url: "https://x.com/a.jpg", id: undefined });
   assert.equal(view.body, "Plain body");
 });
+
+test("named variables are filled by name, or by position when the value was sent without its name", () => {
+  assert.equal(fillVariables("Hi {{name}}, how r u.", [{ type: "text", parameter_name: "name", text: "Sam" }]), "Hi Sam, how r u.");
+  assert.equal(fillVariables("Hi {{ name }}, order {{order_id}}", [{ text: "Sam" }, { text: "A12" }]), "Hi Sam, order A12");
+  assert.equal(fillVariables("Hi {{name}}", []), "Hi {{name}}");
+});
+
+test("a sent template whose values sit in the saved request is filled from its definition", () => {
+  const view = resolveTemplateView(
+    [{ type: "body", parameters: [{ type: "text", text: "13 Nov" }, { type: "text", text: "none" }] }],
+    { components: [{ type: "BODY", text: "Report for {{1}}\nOverdue: {{2}}" }] }
+  );
+  assert.equal(view.body, "Report for 13 Nov\nOverdue: none");
+});

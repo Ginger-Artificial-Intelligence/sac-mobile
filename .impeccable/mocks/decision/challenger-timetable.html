@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=390">
+<title>Pocket Timetable</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:390px;height:844px;overflow:hidden;background:#f3efe2;font-family:Barlow,system-ui,sans-serif;color:#1c2330;font-size:15px}
+.head{background:#e9b23a;color:#00326b;padding:54px 18px 14px}
+.head h1{font-size:15px;font-weight:800;letter-spacing:2px;text-transform:uppercase}
+.head p{font-size:15px;font-weight:600;margin-top:6px}
+.cols{display:grid;grid-template-columns:26px 1fr 62px 64px;gap:8px;padding:10px 18px;background:#00326b;color:#f3efe2;font-family:"Barlow Semi Condensed";font-weight:700;font-size:15px;letter-spacing:1.4px;text-transform:uppercase}
+.row{display:grid;grid-template-columns:26px 1fr 62px 64px;gap:8px;padding:11px 18px;border-bottom:1px solid #cfc8b4;height:72px;align-items:start}
+.dot{width:14px;height:14px;border-radius:7px;border:2px solid #1c2330;margin-top:3px}
+.dot.f{background:#1c2330}.dot.v{background:#d9442b;border-color:#d9442b}.dot.g{background:#1f6b4f;border-color:#1f6b4f}
+.who b{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who span{display:block;margin-top:4px;color:#555d6b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who{min-width:0}
+.c{font-family:"Barlow Semi Condensed";font-weight:600;text-align:right}
+.c small{display:block;font-size:15px;font-weight:600;color:#555d6b;margin-top:4px;text-transform:uppercase;letter-spacing:.6px}
+.row.rev{background:#00326b;color:#f3efe2;border-bottom-color:#00326b}
+.row.rev .who span,.row.rev .c small{color:#c9d4e6}
+.row.rev .dot{background:#e9b23a;border-color:#e9b23a}
+.strip{display:flex;gap:16px;padding:12px 18px;font-family:"Barlow Semi Condensed";font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border-bottom:2px solid #1c2330}
+.strip .on{background:#1c2330;color:#f3efe2;padding:0 8px}
+.tabs{position:absolute;left:0;right:0;bottom:0;height:78px;background:#e9b23a;display:flex;padding-top:16px;font-family:"Barlow Semi Condensed";font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#00326b}
+.tab{flex:1;text-align:center}
+.tab.on span{background:#00326b;color:#e9b23a;padding:2px 8px}
+</style></head><body>
+<div class="head"><h1>SAC CRM · Inbox</h1><p>14 waiting · longest 38 min · Aisha</p></div>
+<div class="strip"><span class="on">All</span><span>Unread</span><span>Mine</span><span>Open</span><span>Closed</span></div>
+<div class="cols"><span></span><span>Customer</span><span style="text-align:right">New</span><span style="text-align:right">Wait</span></div>
+<div class="row rev"><div class="dot"></div><div class="who"><b>Rahul Menon</b><span>Payment done, please confirm the order</span></div><div class="c">5</div><div class="c">38 min<small>late</small></div></div>
+<div class="row"><div class="dot f"></div><div class="who"><b>Lakshmi Traders</b><span>Template approved? Need to send today</span></div><div class="c">3</div><div class="c">12 min<small>yours</small></div></div>
+<div class="row"><div class="dot v"></div><div class="who"><b>+91 98470 11326</b><span>📷 Photo</span></div><div class="c">1</div><div class="c">6 min<small>free</small></div></div>
+<div class="row"><div class="dot f"></div><div class="who"><b>Fathima N.</b><span>Thank you, got the invoice</span></div><div class="c">2</div><div class="c">2 min<small>sales</small></div></div>
+<div class="row"><div class="dot g"></div><div class="who"><b>Green Leaf Organics</b><span>You: We will deliver by Friday</span></div><div class="c">–</div><div class="c">1:42 pm<small>open</small></div></div>
+<div class="row"><div class="dot"></div><div class="who"><b>Arun K.</b><span>You: Shared the catalogue</span></div><div class="c">–</div><div class="c">11:05 am<small>closed</small></div></div>
+<div class="row"><div class="dot"></div><div class="who"><b>Nisha Textiles</b><span>You: Sent the price list</span></div><div class="c">–</div><div class="c">9:20 am<small>closed</small></div></div>
+<div class="tabs"><div class="tab"><span>Home</span></div><div class="tab on"><span>Inbox</span></div><div class="tab"><span>Contacts</span></div><div class="tab"><span>Profile</span></div></div>
+</body></html>
